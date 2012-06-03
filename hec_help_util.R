@@ -82,7 +82,8 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
         #@ Now coerce output to SpatialPolygonsDataFrame
         chan=SpatialPolygons(chan_polygons, proj4string=spatial_proj)
 
-        chan2=SpatialPolygonsDataFrame(chan, data=data.frame(seq(1,30)), match.ID=FALSE)
+        chan
+        #chan2=SpatialPolygonsDataFrame(chan, data=data.frame(seq(1,30)), match.ID=FALSE)
 
-        chan2
+        #chan2
 }
