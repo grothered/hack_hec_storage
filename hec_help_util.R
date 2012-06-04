@@ -29,7 +29,8 @@ split_nchars_numeric<-function(string,no_chars){
 
 create_channel_polygon<-function(hec_chan_file, spatial_proj){
     #@ Function to read a hec-ras file, extract the channel network, and make a
-    #@ polygon which covers it
+    #@ SpatialPolygonsDataFrame which covers it
+
     library(sp)
     library(rgdal)
 
@@ -82,8 +83,9 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
         #@ Now coerce output to SpatialPolygonsDataFrame
         chan=SpatialPolygons(chan_polygons, proj4string=spatial_proj)
 
-        chan
-        #chan2=SpatialPolygonsDataFrame(chan, data=data.frame(seq(1,30)), match.ID=FALSE)
+        chan2=SpatialPolygonsDataFrame(chan, data=data.frame(seq(1,30)), match.ID=FALSE)
 
-        #chan2
+        chan2
 }
+
+#################################################################################################
