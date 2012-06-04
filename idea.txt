@@ -4,6 +4,7 @@ Suppose we have:
 
 Then, we would like to
 a) Take a difference of 2 with 1, so now the storage areas do not contain channels
+    - Modify -- assume that the user has defined the storage areas as they like -- so we do not need this.
 b) Compute stage-volume relations for all of these storage areas
 c) Write out in the appropriate form for hec-ras
 d) Automatically make storage area connections based on the connected boundaries
