@@ -61,6 +61,7 @@ storage_file_layername='storage1'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 channel_only=FALSE
+vertical_datum_offset=10.5
 
 #@ Get libraries
 library(rgdal)
@@ -118,7 +119,7 @@ print("COMPUTING STAGE-VOLUME RELATIONS FOR STORAGE AREAS")
 store1_stage_vol_list=list()
 for(i in 1:length(store1_list)){
     my_poly=store1_list[[i]]
-    store1_stage_vol_list[[i]] = compute_stage_vol_relation(my_poly,lidar_DEM, vertical_datum_offset=10.5)
+    store1_stage_vol_list[[i]] = compute_stage_vol_relation(my_poly,lidar_DEM, vertical_datum_offset)
 }
 
 #@ Step 1.5: Identify intersections of storage polygons with each other, or with the channel network
@@ -215,7 +216,7 @@ for(i in 1:length(storage_intersections)){
       storage_connection_text=
           make_storage_connection_text( store1_list[[i]], store1_list[[k]], 
                                         storage_names[[i]], storage_names[[k]],
-                                        lidar_DEM,vertical_datum_offset=10.5 )    
+                                        lidar_DEM,vertical_datum_offset)    
       storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
   }
 
@@ -266,7 +267,7 @@ for(i in 1:length(channel_intersections)){
         #@ Iteratively update hec_linestmp by inserting laterl weir
         hec_linestmp=make_lateral_weir_text(store1_list[[i]], storage_names[[i]],
                                                  chan2_list[[k]], chan_boundary_points, 
-                                                 lidar_DEM, vertical_datum_offset=10.5, 
+                                                 lidar_DEM, vertical_datum_offset, 
                                                  hec_linestmp)
 
     }
