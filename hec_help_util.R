@@ -96,8 +96,8 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
     #@ Function to read a hec-ras file, extract the channel network, and make a
     #@ SpatialPolygonsDataFrame which covers it
 
-    library(sp)
-    library(rgdal)
+    #library(sp)
+    #library(rgdal)
 
     #@ Read file
     fin=file(hec_chan_file, open='r')
@@ -450,3 +450,221 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM){
 
 ###############################################################################################################
 
+make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
+
+    #@ Read file
+    fin=file(hec_chan_file, open='r')
+    hec_lines=readLines(fin)
+    close(fin)
+
+    #@ Identify channels
+    chan_ind=grep('River Reach=', hec_lines)
+
+    chan_polygons=list()
+
+    #@ For each channel, extract the cross-sectional start/end points
+    output_coords=c()
+    output_data=c()
+    for(i in 1:(length(chan_ind)-1)){
+
+        offset=chan_ind[i]-1
+        #@ Only grep the relevant cross-sections
+        xsect_start=grep('XS GIS Cut Line=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
+        #xsect_end=grep('Node Last Edited Time=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
+        xsect_end=grep('#Sta/Elev=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset - 1
+       
+        # Useful to have the 'station' lines as well. Initially I tried to use
+        # this as the definition of xsect_start, however, I decided that was
+        # not the best. However, we need this line to get the station number
+        station_start=grep('Type RM Length L Ch R =', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
+   
+        #@ NOW EXTRACT THE START AND END POINTS OF EACH CROSS-SECTION 
+
+        #@ Predefine variables to store start and end points of
+        #@ cross-sections
+        coords_start=c()
+        coords_end=c()
+        reach_name=c()
+        station_name=c()
+        left_bank_downstream_dist=c()
+        right_bank_downstream_dist=c()
+        for(j in 1:length(xsect_start)){  # Loop over all xsections
+            cutline_text=hec_lines[(xsect_start[j]+1):(xsect_end[j]-1)]
+            coords=c()
+            for(k in 1:length(cutline_text)){ # Loop over all lines 
+                coords1=split_nchars_numeric(cutline_text[k],16)
+                coords=rbind(coords,matrix(coords1,ncol=2,byrow=TRUE))
+            }
+            coords_start=rbind(coords_start,coords[1,])
+            coords_end=rbind(coords_end,coords[length(coords[,1]),])
+            # Get reach name
+            reach_name=c(reach_name, strsplit(hec_lines[offset+1], "=")[[1]][2] )
+            # Get station name
+            station_index=max(station_start[station_start<=xsect_start[j]])
+            station_name=c(station_name, strsplit(hec_lines[station_index], ",")[[1]][2] )
+
+            # Get left and right bank downstream distances
+            left_bank_downstream_dist=c(left_bank_downstream_dist, strsplit(hec_lines[station_index], ",")[[1]][3] )
+            right_bank_downstream_dist=c(right_bank_downstream_dist, strsplit(hec_lines[station_index], ",")[[1]][5] )
+
+        }
+       
+        output_coords=rbind(output_coords, coords_start)
+        output_data=rbind(output_data, 
+                          cbind(reach_name, station_name, 
+                                rep('L', length(reach_name)), 
+                                left_bank_downstream_dist) )
+        output_coords=rbind(output_coords, coords_end)
+        output_data=rbind(output_data, cbind(reach_name, station_name, 
+                                             rep('R', length(reach_name)), 
+                                             right_bank_downstream_dist))
+         
+        #print(cbind(station_name, reach_name))
+
+    }
+
+        # Coerce to spatial points
+        output_pts=SpatialPointsDataFrame(coords=output_coords[,1:2], 
+                      data=data.frame(reach_name=output_data[,1], station_name=output_data[,2],
+                                      bank=output_data[,3], downstream_distance=as.numeric(output_data[,4])),
+                      match.ID=FALSE,
+                      proj4string=CRS(spatial_proj))
+        output_pts
+}
+
+##############################################################
+
+make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts, lidar_DEM, hec_lines){
+    #@ Given a storage polygon and a channel polygon (which intersect), make me
+    #@ a lateral weir and place it into hec_lines
+    #@
+    #@ Lateral weirs look like this:
+    #@
+    #@ Type RM Length L Ch R = 6 ,26250   ,,,
+    #@ BEGIN DESCRIPTION:
+    #@ south_east_mont2_to_channel
+    #@ END DESCRIPTION:
+    #@ Node Last Edited Time=May/04/2012 13:57:15
+    #@ Lateral Weir Pos= 0 
+    #@ Lateral Weir End=                ,                ,        ,south_east_mont2
+    #@ Lateral Weir Distance=10
+    #@ Lateral Weir TW Multiple XS=-1
+    #@ Lateral Weir WD=20
+    #@ Lateral Weir Coef=1.1
+    #@ Lateral Weir WSCriteria=-1 
+    #@ Lateral Weir Flap Gates= 0 
+    #@ Lateral Weir Hagers EQN= 0 ,,,,,
+    #@ Lateral Weir SS=0.05,0.05,
+    #@ Lateral Weir Type= 0 
+    #@ Lateral Weir Connection Pos and Dist= 0 ,
+    #@ Lateral Weir SE= 2 
+    #@        0    24.5    1050    24.5
+    #@ Lateral Weir HW RS Station=26275.4*,-10
+    #@ Lateral Weir TW RS Station=,0
+    #@ LW Div RC= 0 ,False,
+    #@
+    #@
+
+    #@ Compute intersection of storage poly with chan poly
+    intersection=gIntersection(storage_poly,chan_poly)
+  
+    #@ Get channel boundary points 
+    weir_pts=chan_pts[intersection,]
+
+    #@ Check to ensure we intersect the channel on only 1 bank
+    banks=weir_pts$bank
+    bank2=union(banks,banks)
+    if(length(bank2)>1){
+        print(paste('ERROR: Storage polygon,', storage_name, "intersects on both the left and right banks"))
+        print(weir_pts)
+        stop('FIX THIS BEFORE CONTINUING')
+    }
+
+    #@ Sort the bank stations
+    st1=as.character(weir_pts$station_name)
+    st2=gsub('\\*', '', st1) # Remove * symbol
+    st3=as.numeric(st2) # Now they are numbers
+
+    #@ Sort the weir points along the channel
+    station_order=sort(st3,index.return=T, decreasing=T)
+    weir_pts=weir_pts[station_order$ix,] 
+
+    #@ Get coordinates of the weir points, and downstream distances, and make a
+    #@ line along them with 3 times as many points
+    weir_line = coordinates(weir_pts)
+    ll=length(weir_line[,1])
+    interpolated_length=3*ll
+    weir_line=cbind(weir_line, c(0, cumsum(weir_pts$downstream_distance[1:(ll-1)]))) # Append distance
+    weir_line_xint = approx(weir_line[,3], weir_line[,1], n=interpolated_length) # Interpolate x's
+    weir_line_yint = approx(weir_line[,3], weir_line[,2], n=interpolated_length) # Interpolate y's
+    #@ weir_line = downstream_distance, x_coordinate, y_coordinate
+    weir_line=cbind(weir_line_xint$x, weir_line_xint$y, weir_line_yint$y)
+
+    #@ Sample the raster elevations at points on weir_line
+    transect_inds = cbind(rowFromY(lidar_DEM, weir_line[,3]), colFromX(lidar_DEM, weir_line[,2]) )
+    weir_elev=lidar_DEM[transect_inds]
+
+    weir_relation=cbind(weir_line[,1], weir_elev)
+   
+   
+    #@
+    #@ Develop text information for write out
+    #@ 
+
+    #@ Define weir station name, just downstream of the most upstream bank station
+    lateral_weir_distance=0.02*(station_order$x[1]-station_order$x[2])
+    weir_station_name=station_order$x[1]- lateral_weir_distance
+
+    output_text=c()
+    line1= paste("Type RM Length L Ch R = 6 ,", round(weir_station_name,3), ",,, ", sep="")
+    output_text=c(output_text,line1)
+    output_text=c(output_text, 'BEGIN DESCRIPTION:')
+    output_text=c(output_text, paste(storage_name, '_to_chan', sep=""))
+    output_text=c(output_text, 'END DESCRIPTION:')
+
+    #@ Add timestamp
+    edit_time=format(Sys.time(), "%b/%d/%Y %H:%M:%S") # Timestamp like hec-ras
+    output_text=c(output_text, paste("Node Last Edited Time=", edit_time,sep=""))
+
+    bankflag=0 + 3*(bank2=='R') # 0 for left bank, 3 for right bank
+    output_text=c(output_text, paste("Lateral Weir Pos= ",bankflag, sep=""))
+
+
+    output_text=c(output_text,
+                  paste("Lateral Weir End=                ,                ,        ,",storage_name,sep=""))
+
+    output_text=c(output_text, paste('Lateral Weir Distance=', round(lateral_weir_distance,3),sep=""))
+
+    next_lines=c("Lateral Weir TW Multiple XS=-1","Lateral Weir WD=20","Lateral Weir Coef=1.1",
+                 "Lateral Weir WSCriteria=-1","Lateral Weir Flap Gates= 0","Lateral Weir Hagers EQN= 0 ,,,,,",
+                 "Lateral Weir SS=0.05,0.05,","Lateral Weir Type= 0","Lateral Weir Connection Pos and Dist= 0 ,")
+
+    output_text=c(output_text,next_lines)
+    output_text=c(output_text, paste("Lateral Weir SE= ",interpolated_length,sep=""))
+
+    #@ Add weir distance-elevation information
+    weir_x=pad_string(as.character(signif(weir_relation[,1],7)), 8, pad=" ", justify='right')
+    weir_y=pad_string(as.character(signif(weir_relation[,2],7)), 8, pad=" ", justify='right')
+    weir_text=paste(weir_x,weir_y,sep="")
+    weir_text=format_in_rows(weir_text,5)
+    output_text=c(output_text, weir_text)
+
+    upstream_station=pad_string(as.character(station_order$x[1]), 8, pad=" ", justify='left')
+
+    output_text=c(output_text, 
+                  paste("Lateral Weir HW RS Station=", 
+                         upstream_station,",", 
+                         -round(lateral_weir_distance,3),sep=""))
+
+    output_text=c(output_text, "Lateral Weir TW RS Station=,0")
+    output_text=c(output_text, "LW Div RC= 0 ,False,")
+
+    #@
+    #@
+    #@ Now find the line in 'hec_lines' where we need to insert this weir
+    #@
+    #@
+
+    chan_ind=grep('River Reach=', hec_lines)
+
+}

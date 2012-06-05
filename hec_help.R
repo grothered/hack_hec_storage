@@ -1,25 +1,38 @@
 #######################################################################
 #
-#@ R code for semi-automating the creation of storage areas to hec-ras.
+#@ R code for semi-automating the creation of storage areas in hec-ras.
+#
+#######################################################################
 #
 # This code takes as input:
 #
 # 1) A hec-ras .g0x file (describing the geometry)
 #
 # 2) A polygon shapefile (storage shapefile) containing several individual
-#    polygons which the
-#    user would like to add as storage areas to the hec-ras geometry
+#    polygons which the user would like to add as storage areas to the hec-ras
+#    geometry
+#
+#    If any 2 polygons overlap with each other, it is assumed that a storage area
+#    connection is desired at that location
+#
+#    If any polygon overlaps with a channel in the hec-ras file, it is
+#    assumed that a lateral weir connecting the 2 is desired
 #
 # 3) A raster DEM file
 #
-#  It is assumed that 1,2,3 all use the same coordinate system (units in metres)
-#  , and that 2) and 3) have the correct projection information, and 1 & 2 are inside 3.
+#
+# It is assumed that 1,2,3 all use the same coordinate system (units in metres)
+# , and that 2) and 3) have the correct projection information, and that 1 & 2
+# are inside 3.
 #
 # 
-# It then does the following:
+# The code does the following:
 #
-# 1) Create a polygon shapefile of the channel network (channel shapefile). 
-#    The code will stop here if 'channel_only=TRUE'
+# 1) Creates a polygon shapefile of the channel network (channel shapefile), by
+#    joining boundary points of each cross-section within each river reach in the
+#    hec-ras file.
+#    The code will stop here if 'channel_only=TRUE', which can be useful if you
+#    just want to create a channel polygon
 #
 # 2) For each individual polygon in the storage shapefile, add it as a storage area in
 #    the hec-ras geometry file, using a stage-volume relation computed from the
@@ -28,24 +41,18 @@
 # 3) Compute all intersections of polygons in the storage-shapefile. These are taken as
 #    sites where a 'storage area connection' is to be located. The connection
 #    is created as a weir, with the heights over the weir reflecting the
-#    heights in the DEM within the intersection zone. This is added to the hec-ras geometry file
+#    heights in the DEM within the intersection zone. This is added to the
+#    hec-ras geometry file.
 #    [Note that the weir length = intersection_polygon_boundary_length/3, which
 #    should be approximately correct for a relatively wide, narrow intersection
 #    polygon. This could potentially be done in a more refined way].
 #
-# 4) Computes all the intersections of polygons in the storage shapefile, with the channel shapefile
-#    These are taken as sites where a 'lateral weir connection' is to be located. The elevation of the weir
-#    is selected based on the elevations of the raster DEM over that zone.
+# 4) Computes all the intersections of polygons in the storage shapefile, with
+#    the channel shapefile These are taken as sites where a 'lateral weir
+#    connection' is to be located. The elevation of the weir is selected based on
+#    the elevations of the raster DEM over that zone.
 #
 #######################################################################
-
-library(rgdal)
-library(sp)
-library(rgeos)
-library(raster)
-
-#@ Read in utility functions
-source('hec_help_util.R')
 
 #@ Input parameters
 hecras_channels_file='May_june_2012.g05'
@@ -53,6 +60,15 @@ potential_storage_file='manual_store/storage1.shp'
 storage_file_layername='storage1'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 channel_only=FALSE
+
+#@ Get libraries
+library(rgdal)
+library(sp)
+library(rgeos)
+library(raster)
+
+#@ Read in utility functions
+source('hec_help_util.R')
 
 # Read lidar_dem
 lidar_DEM=raster(lidar_DEM_file)
@@ -63,7 +79,7 @@ spatial_proj=lidar_DEM@crs@projargs
 
 #@ Compute the channel polygon from hec-ras file, and convert it to a spatial format
 chan=create_channel_polygon(hecras_channels_file, CRS(spatial_proj))
-chan2=gBuffer(chan,width=1, byid=T) # Gets rid of invalid geometry
+chan2=gBuffer(chan,width=0.1, byid=T) # Gets rid of invalid geometry
 chan2=SpatialPolygonsDataFrame(chan2, data=data.frame(DN=seq(1,length(chan2))), match.ID=FALSE) # Needed to write to shapefile
 
 
@@ -77,7 +93,7 @@ if(channel_only){
 
 #@ Read storage polygon
 store1=readOGR(potential_storage_file, layer=storage_file_layername)
-store1_simp=gBuffer(store1,width=1,byid=T) # Needed to make geometry valid
+store1_simp=gBuffer(store1,width=0.1,byid=T) # Helpful to make geometry valid
 
 
 ############################ FORMAT CONVERSION for R
@@ -234,6 +250,22 @@ hec_lines2=hec_linestmp
 #@
 #@
 
+chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
 
+# Loop over all storage-channel intersections
+hec_linestmp=hec_lines2 # Copy output file for modification
+for(i in 1:length(channel_intersections)){
+
+    if(is.na(channel_intersections[[i]])) next
+
+    for(j in 1:length(channel_intersections[[i]])){
+        k=channel_intersections[[i]][j]
+        lateral_weir_text=make_lateral_weir_text(store1_list[[i]], storage_names[[i]],
+                                                 chan2_list[[k]], chan_boundary_points, 
+                                                 lidar_DEM, hec_linestmp)
+
+    }
+
+}
 #@ Write to output
 cat(hec_lines2,file='hectest.g05',sep="\n") 
