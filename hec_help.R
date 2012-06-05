@@ -260,12 +260,15 @@ for(i in 1:length(channel_intersections)){
 
     for(j in 1:length(channel_intersections[[i]])){
         k=channel_intersections[[i]][j]
-        lateral_weir_text=make_lateral_weir_text(store1_list[[i]], storage_names[[i]],
+        #@ Iteratively update hec_linestmp by inserting laterl weir
+        hec_linestmp=make_lateral_weir_text(store1_list[[i]], storage_names[[i]],
                                                  chan2_list[[k]], chan_boundary_points, 
                                                  lidar_DEM, hec_linestmp)
 
     }
 
 }
+
+hec_lines2=hec_linestmp
 #@ Write to output
 cat(hec_lines2,file='hectest.g05',sep="\n") 

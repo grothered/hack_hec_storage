@@ -662,9 +662,42 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #@
     #@
     #@ Now find the line in 'hec_lines' where we need to insert this weir
-    #@
+    #@ Note that we will be altering hec_lines with every call to this function
+    #@ So we need to recompute the locations
     #@
 
-    chan_ind=grep('River Reach=', hec_lines)
 
+    #@ Identify the start of the channel of interest
+    chan_ind=grep('River Reach=', hec_lines) # All channels
+    my_chan_ind=grep(weir_pts$reach_name[1], hec_lines[chan_ind]) # Should only match 1
+
+    #@ Compute lower bound of 'lines of interest'
+    my_lower_ind=chan_ind[my_chan_ind]
+    #@ Compute upper bound of 'lines of interest'
+    ll=length(hec_lines)
+    if(my_chan_ind<length(chan_ind)){
+        my_upper_ind=chan_ind[my_chan_ind+1]
+    }else{
+        my_upper_ind=ll
+    }
+  
+    #print(paste('my_lower_ind', my_lower_ind, 'my_upper_ind', my_upper_ind)) 
+    
+    #@ Find the line at the start of the upstream station
+    line_pattern=paste('Type RM Length L Ch R = 1 ,',weir_pts$station_name[1],sep="")
+    #@ NOTE: Match can contain a * -- need to use 'fixed=TRUE' to get this
+    upstream_station_ind=grep(line_pattern, hec_lines[my_lower_ind:my_upper_ind],fixed=TRUE) + my_lower_ind-1
+
+    #print(hec_lines[my_lower_ind:my_upper_ind][1:300])
+
+    #print(paste('line_pattern:', line_pattern, 'upstream_station_ind', upstream_station_ind)) 
+    #stop()
+    
+    #@ Find next blank line (search next 300 lines)
+    upper_search_ind=min(upstream_station_ind+300, ll)
+    blank_loc=grep(" ", hec_lines[upstream_station_ind:upper_search_ind])[1] + upstream_station_ind-1
+
+    hec_linestmp=c(hec_lines[1:blank_loc], output_text, " ", hec_lines[(blank_loc+1):ll])
+
+    hec_linestmp
 }
