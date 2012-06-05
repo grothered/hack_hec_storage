@@ -307,7 +307,8 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
 
     output_text=c(output_text,next_lines)
 
-    print(output_text)
+    output_text
+    #print(output_text)
 }
 
 ####################################################################################################################
