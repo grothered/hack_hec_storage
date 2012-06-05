@@ -58,8 +58,8 @@
 hecras_channels_file='May_june_2012.g05'
 potential_storage_file='manual_store/storage1.shp'
 storage_file_layername='storage1'
-#lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
+lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
+#lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 channel_only=FALSE
 
 #@ Get libraries
@@ -215,7 +215,7 @@ for(i in 1:length(storage_intersections)){
       storage_connection_text=
           make_storage_connection_text( store1_list[[i]], store1_list[[k]], 
                                         storage_names[[i]], storage_names[[k]],
-                                        lidar_DEM )    
+                                        lidar_DEM,vertical_datum_offset=10.5 )    
       storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
   }
 
@@ -253,7 +253,7 @@ hec_lines2=hec_linestmp
 print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
 
-stop()
+#stop()
 # Loop over all storage-channel intersections
 print("CREATING LATERAL STRUCTURES AT STORAGE-CHANNEL INTERSECTIONS")
 hec_linestmp=hec_lines2 # Copy output file for modification
@@ -266,7 +266,8 @@ for(i in 1:length(channel_intersections)){
         #@ Iteratively update hec_linestmp by inserting laterl weir
         hec_linestmp=make_lateral_weir_text(store1_list[[i]], storage_names[[i]],
                                                  chan2_list[[k]], chan_boundary_points, 
-                                                 lidar_DEM, hec_linestmp)
+                                                 lidar_DEM, vertical_datum_offset=10.5, 
+                                                 hec_linestmp)
 
     }
 

@@ -313,7 +313,7 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
 
 ####################################################################################################################
 
-make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM){
+make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, vertical_datum_offset=10.5){
     #@
     #@ Function to develop the text for a storage area connection between 2 overlapping polygons, store1 & store2
     #@ It finds the hypsometry in their overlapping zone, and uses this to compute the geometry of their weir
@@ -418,7 +418,8 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM){
     #@
     #@ Compute weir form 
     #@
-    elev_relation=lidar_DEM[intersection][[1]]
+    elev_relation=lidar_DEM[intersection][[1]] 
+    elev_relation=elev_relation+ vertical_datum_offset
     l=length(elev_relation)
     elev_relation2=sort(elev_relation)
     #@ How to compute the weir length??
@@ -534,7 +535,8 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
 
 ##############################################################
 
-make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts, lidar_DEM, hec_lines){
+make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts, lidar_DEM, 
+                                 vertical_datum_offset=10.5, hec_lines){
     #@ Given a storage polygon and a channel polygon (which intersect), make me
     #@ a lateral weir and place it into hec_lines
     #@
@@ -603,6 +605,7 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #@ Sample the raster elevations at points on weir_line
     transect_inds = cbind(rowFromY(lidar_DEM, weir_line[,3]), colFromX(lidar_DEM, weir_line[,2]) )
     weir_elev=lidar_DEM[transect_inds]
+    weir_elev=weir_elev + vertical_datum_offset
 
     weir_relation=cbind(weir_line[,1], weir_elev)
    
