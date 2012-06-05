@@ -1,5 +1,70 @@
 # Utility functions for hec-help
 
+pad_string<-function(mystring_vec, charlen, pad=" ", justify='left'){
+    #@ FOR FORMATTING CHARACTER STRINGS TO HAVE A FIXED LENGTH
+    #@ Take a string, check its length, and if it is too short, then pad it to
+    #@ the correct length. If it is too long, then truncate it. 
+
+    out=mystring_vec # Predefine
+  
+    # Loop over each vector element seperately 
+    for(i in 1:length(mystring_vec)){ 
+        mystring=mystring_vec[i]
+
+        l=nchar(mystring) # Input string length
+
+        if(l<=charlen){
+            # String needs to be padded
+            padtext=paste(rep(pad,charlen-l), collapse="")
+
+            if(justify=='left'){
+                out[i]=paste(mystring,padtext,sep="")
+            }else if(justify=='right'){
+                out[i]=paste(padtext,mystring,sep="")
+            }
+
+        }else if(l>charlen){
+            # String needs to be truncated
+            mystring_split=strsplit(mystring,"")[[1]] # Split to individual characters
+
+            if(justify=='left'){
+                out[i]=paste(mystring_split[1:charlen],sep="", collapse="")
+            }else if(justify=='right'){
+                out[i]=paste(mystring_split[(l-charlen+1):l], sep="", collapse="")
+            }
+        }
+    }
+
+    out
+}
+
+###########################################################
+
+format_in_rows<-function(char_vec,rowlen){
+    #@ Function to re-format a character vector to have rows containing 'rowlen' entries
+    #@ e.g for rowlen=2
+    #@ c(' 01', ' 23', ' 34.5', 'my char', 'f') --> c(' 01 23', ' 34.5my char', 'f') 
+
+    l=length(char_vec)
+    #@ l1= Number of lines we need to add to make the number of next_lines elements a multiple of rowlen
+    l1= (rowlen-l%%rowlen)%%rowlen 
+
+    char_vec=c(char_vec, rep(" ", l1)) # Padded
+
+    #@ Convert to matrix with rowlen columns
+    char_vec2=matrix(char_vec,ncol=rowlen,byrow=T)
+    
+    #@ Convert to rows with rowlen entries
+    #e.g. char_vec3=paste(char_vec2[,1], char_vec2[,2], char_vec2[,3], char_vec2[,4], char_vec2[,5], sep="")
+    char_vec3=c()
+    for(i in 1:rowlen){ 
+        char_vec3=paste(char_vec3, char_vec2[,i],sep="") 
+    }
+
+    char_vec3
+}
+
+
 split_nchars_numeric<-function(string,no_chars){
     #@ FOR READING STRUCTURED TEXT
     #@ Take a string, split it into individual characters, and recombine them
@@ -90,10 +155,10 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
 
 #################################################################################################
 
-compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset){
+compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset, upper_bound_stage=100){
     #@
     #@ Function to compute the stage-volume relation for a region defined by the polygon my_poly
-    #@ , on a given lidar_Dem.  
+    #@ , on a given lidar_Dem raster  
     #@ Output: A Stage-Volume relation, with the stage values offset by + vertical_datum_offset
     #@
 
@@ -107,7 +172,7 @@ compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset){
 
     # Compute a sequence of stages at which we will evaluate the stored volume
     lower_bound=elev_hist$mids[1]-0.1 #
-    upper_bound=100. # MAX value at which we want the volume. This is a trick so that hec-ras never exceeds the range
+    upper_bound=max(upper_bound_stage,max(elev_hist$mids)+0.01) # MAX value at which we want the volume. This is a trick so that hec-ras never exceeds the range
     desired_stage=c(lower_bound,elev_hist$mids, upper_bound) # This is the range of stages for which we want output
     area_fun=approxfun(desired_stage, c(0,cumsum(elev_hist$counts)*cell_area, sum(elev_hist$counts)*cell_area), rule=2 )
     # Function to compute volume (note: volume = integral (Area))
@@ -167,61 +232,69 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
     #@    24.35741.9367   24.45780.8355   24.55 820.769   24.65861.5136   24.75904.3318
     #@    24.85944.7191   24.95986.9531   25.051029.436   25.151072.018   25.251114.711
     #@    25.351157.568   25.451200.513   25.551243.467   110.537729.49
+    #@
+    #@
+    #@ 
+    #@    These string manipulations can be pretty hacky
+    #@
 
     #@ Compute coordinates inside poly
     storage_area_central_coords=coordinates(storage_area)
-    #@ Compute bounding coordinates
+
+    #@ Compute bounding coordinates -- got to love the notation
     storage_area_bounding_coords=coordinates(gBoundary(storage_area))[1][[1]][[1]]
+
     #@ Remove final bounding coordinate (which is a repeat of the first point, and does not feature in hec)
     l=length(storage_area_bounding_coords[,1])
     storage_area_bounding_coords=storage_area_bounding_coords[-l,]
 
+    #@ Start producing output text
 
     output_text=c() # Initialise output_text
 
-    # Name related character strings
+    #@ Create character strings of correct format for name
     name_nonempty=as.character(name)
     name_fil=rep(" ", 16-nchar(name_nonempty))
     name_fil=paste(name_fil,collapse='')
 
-    # Coordinate character strings
+    #@ Create coordinate character strings with correct format
     coord1=format(as.character(signif(storage_area_central_coords[1,1],13)),width=15,justify='none',trim=T)
     coord2=format(as.character(signif(storage_area_central_coords[1,2],13)),width=15,justify='none',trim=T)
 
-    # Build first line of output text
+    #@ Build first line of output text
     first_line=paste("Storage Area=", name_nonempty, name_fil, ",", coord1,",", coord2, sep="")
     #print(first_line)
     output_text=c(output_text, first_line)
 
-    # Build the second line of output text
+    #@ Build the second line of output text
     second_line=paste('Storage Area Surface Line=', l-1)
     output_text=c(output_text,second_line)
 
-    # Build boundary output coords
-    coord1=format(as.character(signif(storage_area_bounding_coords[,1],16)),width=17,justify='none',trim=T)
-    coord2=format(as.character(signif(storage_area_bounding_coords[,2],16)),width=17,justify='none',trim=T)
-  
-    # Forcibly pad these - it is critical to get the width right
-    n1=nchar(coord1)
-    for(i in 1:length(n1)){
-        if(n1[i]<16){
-            coord1[i]=paste(paste(rep(" ", 16-n1[i]),collapse=""), coord1[i],sep="")
-        }
-    }
+    #@ Build boundary output coords with correct format
+    #coord1=format(as.character(signif(storage_area_bounding_coords[,1],16)),width=17,justify='none',trim=T)
+    #coord2=format(as.character(signif(storage_area_bounding_coords[,2],16)),width=17,justify='none',trim=T)
+ 
+    coord1=pad_string(as.character(signif(storage_area_bounding_coords[,1],15)), 16,pad="0",justify='left') 
+    coord2=pad_string(as.character(signif(storage_area_bounding_coords[,2],15)), 16,pad="0",justify='left') 
+ 
+    #@ Forcibly pad these - it is critical to get the width right
+    #FIXME: Must be a more elegant way
+    #n1=nchar(coord1)
+    #for(i in 1:length(n1)){
+    #    if(n1[i]<16){
+    #        coord1[i]=paste(paste(rep(" ", 16-n1[i]),collapse=""), coord1[i],sep="")
+    #    }
+    #}
     
     next_lines=paste(coord1,coord2,sep="")
-    #for(i in 1:length(next_lines)){
-    #    if(nchar(next_lines[i])<32){
-    #        
-    #    }
-    #
-    #}
+    l=length(coord1)
+    next_lines=paste(next_lines, rep(" ", l, collapse=""),sep="") 
     output_text=c(output_text,next_lines)
 
-    # Add storage area type info
+    #@ Add storage area type info
     output_text=c(output_text, c("Storage Area Type= 1", "Storage Area Area=","Storage Area Min Elev="))
 
-    # Add volume - elev information
+    #@ Add volume - elev information
     l=length(elev_vol[,1])
     output_text=c(output_text,paste('Storage Area Vol Elev=', l) )
     elev_coord=format(as.character(round(elev_vol[,1],2)), width=8,justify='right',trim=T)
@@ -229,16 +302,150 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
     vol_coord=format(as.character(signif(elev_vol[,2],5)),width=8,justify='right',trim=T)
 
     next_lines=paste(elev_coord,vol_coord,sep="")
+    # Get the format right
+    next_lines = format_in_rows(next_lines,5)
 
-    l=length(next_lines)
-    l1= (5-l%%5)%%5 # Number of lines we need to add to make the number of next_lines elements a multiple of 5
-    next_lines=c(next_lines, rep(" ", l1))
-
-    next_lines2=matrix(next_lines,ncol=5,byrow=T)
-    
-    next_lines3=paste(next_lines2[,1], next_lines2[,2], next_lines2[,3], next_lines2[,4], next_lines2[,5], sep="")
-
-    output_text=c(output_text,next_lines3)
+    output_text=c(output_text,next_lines)
 
     print(output_text)
 }
+
+####################################################################################################################
+
+make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM){
+    #@
+    #@ Function to develop the text for a storage area connection between 2 overlapping polygons, store1 & store2
+    #@ It finds the hypsometry in their overlapping zone, and uses this to compute the geometry of their weir
+    #@ The text is for insertion into a hec-ras .g01 file
+    #@
+
+    #@ The format looks like this
+    #@
+    #@ Connection=south_east_mont_,514493.3662094,1627706.738947
+    #@ Connection Desc=south_east_mont_1_to_2
+    #@ Connection Line= 3 
+    #@ 514532.9213419731627758.28048332514532.9213419731627758.28048332
+    #@ 514414.2559442781627603.65587421
+    #@ Connection Last Edited Time=Jun/03/2012 19:27:42
+    #@ Connection Up SA=south_east_mont1
+    #@ Connection Dn SA=south_east_mont2
+    #@ Conn Routing Type= 1 
+    #@ Conn Use RC Family=True
+    #@ Conn Weir WD=20
+    #@ Conn Weir Coef=1.66
+    #@ Conn Weir Is Ogee= 0 
+    #@ Conn Simple Spill Pos Coef=0.05
+    #@ Conn Simple Spill Neg Coef=0.05
+    #@ Conn Weir SE= 2 
+    #@        0      24     300      24
+    #@ Conn HTab HWMax=40
+    #@
+    #@
+        
+    intersection=gIntersection(store1, store2) # Polygon containing the intersection of the 2 storage areas
+    
+    output_text=c() # Predefine output
+
+    #@
+    #@ Compute coordinates for connection
+    #@
+    connection_pts=coordinates(intersection)
+    #@ Format connection_pts
+    con_x=pad_string(as.character(connection_pts[1]), 16,pad="0")
+    con_y=pad_string(as.character(connection_pts[2]), 16,pad="0")
+    
+    #@
+    #@ Make name for connection -- include a timestamp to make unique
+    #@
+    name_timestamp=as.character(floor(as.numeric(Sys.time())*100)%%100000000)
+    #connection_name=paste('SC______',name_timestamp,sep="") 
+    connection_name=paste(name1,name2,sep="")
+    long_connection_name=paste('Connect', name1, '&', name2)
+
+    first_line=paste('Connection=', connection_name,",", con_x,",", con_y,sep="")
+    second_line=paste('Connection Desc=', long_connection_name, sep="")
+    third_line= paste('Connection Line= 2')
+
+    #@
+    #@ now make up coordinates for connection line
+    #@
+
+    #@ Line direction = direction of line joining the 2 centroids
+    store1_cent=coordinates(store1)
+    store2_cent=coordinates(store2)
+    vec=store1_cent-store2_cent
+    vec=vec/10 # This vector will give us the length of the drawn storage area connection line
+    p1=connection_pts+vec
+    p2=connection_pts-vec
+    #@ Format line points
+    p1x=pad_string(as.character(p1[1]), 16, pad="0")
+    p1y=pad_string(as.character(p1[2]), 16, pad="0")
+    p2x=pad_string(as.character(p2[1]), 16, pad="0")
+    p2y=pad_string(as.character(p2[2]), 16, pad="0")
+    fourth_line=paste(p1x, p1y, p2x, p2y, sep="")
+    
+    #@
+    #@ Now make the 'connection_edited' timestamp
+    #@
+    edit_time=format(Sys.time(), "%b/%d/%Y %H:%M:%S") # Timestamp like hec-ras
+    fifth_line=paste("Connection Last Edited Time=", edit_time,sep="")
+
+    output_text=c(first_line, second_line, third_line, fourth_line, fifth_line)
+
+    #@
+    #@ Make connection info
+    #@
+    next_lines=c(paste('Connection Up SA=', name1, sep=""), 
+                 paste('Connection Dn SA=', name2, sep=""))
+
+    output_text=c(output_text,next_lines)
+  
+    #@ 
+    #@ Add other weir info
+    #@ 
+    next_lines=c("Conn Routing Type= 1",  
+                 "Conn Use RC Family=True",
+                 "Conn Weir WD=20",
+                 "Conn Weir Coef=1.66",
+                 "Conn Weir Is Ogee= 0", 
+                 "Conn Simple Spill Pos Coef=0.05",
+                 "Conn Simple Spill Neg Coef=0.05")
+    
+    output_text=c(output_text,next_lines) 
+
+
+    #@
+    #@ Compute weir form 
+    #@
+    elev_relation=lidar_DEM[intersection][[1]]
+    l=length(elev_relation)
+    elev_relation2=sort(elev_relation)
+    #@ How to compute the weir length??
+    #@ Idea:
+    #@ gLength(intersection) = poly boundary length
+    #@ If we assume poly is long and thin, then length~ = boundary length /2 
+    #@ We could make it of slightly shorter length to be conservative (e.g. boundary_length *1/3 or *5/12)
+    weir_length = gLength(intersection)*1/3
+
+    weir_x_vals=seq(0,weir_length, len=l) # X values at which we will get weir elevation points
+    l2=min(l,10) # Number of points on the weir in hec-ras
+
+    weir_relation=approx(weir_x_vals, elev_relation2, n=l2) # Weir x - elev relation
+
+    weir_x=pad_string(as.character(signif(weir_relation$x,7)), 8, pad=" ", justify='right')
+    weir_y=pad_string(as.character(signif(weir_relation$y,7)), 8, pad=" ", justify='right')
+
+    weir_text=paste(weir_x,weir_y,sep="")
+    weir_text=format_in_rows(weir_text,5)
+    output_text=c(output_text, paste("Conn Weir SE=", l2))
+    output_text=c(output_text, weir_text)
+
+
+    #@ Append the Htab HWMax parameter
+    output_text=c(output_text, paste("Conn HTab HWMax=", round(max(elev_relation2)+15,2),sep=""))
+
+    output_text
+}
+
+###############################################################################################################
+
