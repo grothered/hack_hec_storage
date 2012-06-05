@@ -693,10 +693,11 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #print(paste('line_pattern:', line_pattern, 'upstream_station_ind', upstream_station_ind)) 
     #stop()
     
-    #@ Find next blank line (search next 300 lines)
+    #@ Find next blank line (search next 300 lines). Identified because it has
+    #@ no letters or numbers
     upper_search_ind=min(upstream_station_ind+300, ll)
-    blank_loc=grep(" ", hec_lines[upstream_station_ind:upper_search_ind])[1] + upstream_station_ind-1
-
+    blank_loc=grep("[a-z A-z 0-9]", hec_lines[upstream_station_ind:upper_search_ind], invert=TRUE)[1] + upstream_station_ind-1
+    print(blank_loc)
     hec_linestmp=c(hec_lines[1:blank_loc], output_text, " ", hec_lines[(blank_loc+1):ll])
 
     hec_linestmp

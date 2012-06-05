@@ -58,7 +58,8 @@
 hecras_channels_file='May_june_2012.g05'
 potential_storage_file='manual_store/storage1.shp'
 storage_file_layername='storage1'
-lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
+#lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
+lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 channel_only=FALSE
 
 #@ Get libraries
@@ -249,10 +250,12 @@ hec_lines2=hec_linestmp
 #@ We can use this to associate lateral structures with x-sections 
 #@
 #@
-
+print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
 
+stop()
 # Loop over all storage-channel intersections
+print("CREATING LATERAL STRUCTURES AT STORAGE-CHANNEL INTERSECTIONS")
 hec_linestmp=hec_lines2 # Copy output file for modification
 for(i in 1:length(channel_intersections)){
 
