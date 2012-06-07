@@ -192,7 +192,7 @@ get_existing_storage_areas<-function(hec_file,spatial_proj){
     }
     storage_sp_poly=SpatialPolygons(poly_list, proj4string=CRS(spatial_proj))
 
-    storage_sp_polydf=SpatialPolygonsDataFrame(storage_sp_poly, data=data.frame(dat=storage_names), match.ID=FALSE)
+    storage_sp_polydf=SpatialPolygonsDataFrame(storage_sp_poly, data=data.frame(name=storage_names), match.ID=FALSE)
     storage_sp_polydf
 }
 #################################################################################################
@@ -638,10 +638,14 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     weir_line = coordinates(weir_pts)
     ll=length(weir_line[,1])
     if(ll<2){
-        print('WARNING: Storage area intersects channel at one point') 
+        print(' ')
+        print('#####################################################')
+        print('WARNING: Storage area intersects channel at only one point') 
         print('The relevant point is:')
         print(weir_pts)
         print('No lateral weir will be made here')
+        print('#####################################################')
+        print(' ')
         return(hec_lines)
     }
     interpolated_length=3*ll
@@ -749,7 +753,7 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #@ no letters or numbers
     upper_search_ind=min(upstream_station_ind+300, ll)
     blank_loc=grep("[a-z A-z 0-9]", hec_lines[upstream_station_ind:upper_search_ind], invert=TRUE)[1] + upstream_station_ind-1
-    print(blank_loc)
+    #print(blank_loc)
     hec_linestmp=c(hec_lines[1:blank_loc], output_text, " ", hec_lines[(blank_loc+1):ll])
 
     hec_linestmp
