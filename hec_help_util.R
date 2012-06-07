@@ -386,6 +386,19 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     #@
         
     intersection=gIntersection(store1, store2) # Polygon containing the intersection of the 2 storage areas
+   
+    #@ Check that they do not overlap too much -- could be a problem
+    A1=gArea(store1)
+    A2=gArea(store2)
+    A3=gArea(intersection)
+    
+    overlap_max=A3/min(A1,A2)
+    if(overlap_max>0.2){
+        print('')
+        print('#################################################')
+        stop(paste('ERROR: Storage areas', name1, 'and', name2, 'overlap by > 20%. 
+                    This sounds like an error - check your input data'))
+    }
     
     output_text=c() # Predefine output
 

@@ -31,6 +31,9 @@
 # 1) Creates a polygon shapefile of the channel network (channel shapefile), by
 #    joining boundary points of each cross-section within each river reach in the
 #    hec-ras file.
+#    Creates a polygon shapefile of the existing storage areas
+#    Creates a polygon shapefile of the channel bank points
+#
 #    The code will stop here if 'create_shapefiles_of_existing_rasfile=TRUE', which can be useful if you
 #    just want to create a channel polygon
 #
@@ -60,11 +63,12 @@ output_file='hectest.g05'
 potential_storage_file='manual_store/storage_2.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-create_shapefiles_of_existing_rasfile=FALSE
+create_shapefiles_of_existing_rasfile=TRUE
 vertical_datum_offset=10.5
 
 
-storage_file_layername=basename(storage_file_layername) # Might need to edit this
+storage_file_layername=basename(potential_storage_file) # Might need to edit this
+storage_file_layername=strsplit(storage_file_layername, "\\.")[[1]][1]
 
 #@ Get libraries
 library(rgdal)
@@ -91,19 +95,25 @@ print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
 
 print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
+print(' ')
 old_storage=get_existing_storage_areas(hecras_channels_file,spatial_proj)
 
 if(create_shapefiles_of_existing_rasfile){
     #@ Write channel polygon to shapefile for viewing in GIS
-    writeOGR(chan2,dsn='chan_shapefile',layer='chan_shapefile',driver='ESRI Shapefile',overwrite=TRUE)
+    try(writeOGR(chan2,dsn='chan_shapefile',layer='chan_shapefile',driver='ESRI Shapefile',overwrite=TRUE))
 
     #@ Write channel boundary points to a shapefile for viewing in GIS
-    writeOGR(chan_boundary_points,dsn='chan_points',layer='chan_points',driver='ESRI Shapefile',overwrite=TRUE)
+    try(writeOGR(chan_boundary_points,dsn='chan_points',layer='chan_points',driver='ESRI Shapefile',overwrite=TRUE))
 
     #@ Write existing storage areas to shapefile
-    writeOGR(old_storage, dsn='existing_storage',layer='existing_storage',driver='ESRI Shapefile',overwrite=TRUE)
+    try(writeOGR(old_storage, dsn='existing_storage',layer='existing_storage',driver='ESRI Shapefile',overwrite=TRUE))
     
-    print('Completed the channel polygon creation -- will not proceed further while create_shapefiles_of_existing_rasfile=TRUE')
+    print(' ')
+    print('Tried to create polygons from hec-ras files creation') 
+    print('I will not proceed further while create_shapefiles_of_existing_rasfile=TRUE.')
+    print('If you got a "Layer creation failed" error, it probably means')
+    print(' that one of the shapefiles is already open,')
+    print(' in which case R may not be allowed to update it')
 
 }else{
 
@@ -163,7 +173,7 @@ if(create_shapefiles_of_existing_rasfile){
     
     print("COMPUTING 'NEW STORAGE' - 'OLD STORAGE' AREA INTERSECTIONS")
     old_storage_intersections=list()
-    if(length(old_store_list>0)){
+    if(length(old_store_list)>0){
         for(i in 1:length(new_store_list)){
             intersections=c()
             for(j in 1:length(old_store_list)){
