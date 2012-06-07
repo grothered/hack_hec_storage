@@ -56,11 +56,12 @@
 
 #@ Input parameters
 hecras_channels_file='May_june_2012.g05'
-potential_storage_file='manual_store/storage1.shp'
-storage_file_layername='storage1'
+output_file='hectest.g05'
+potential_storage_file='manual_store/storage_2.shp'
+storage_file_layername='storage_2'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-channel_only=FALSE
+channel_only=TRUE
 vertical_datum_offset=10.5
 
 #@ Get libraries
@@ -80,17 +81,31 @@ spatial_proj=lidar_DEM@crs@projargs
 #spatial_proj=proj4string(store1)
 
 #@ Compute the channel polygon from hec-ras file, and convert it to a spatial format
+print('EXTRACTING CHANNEL POLYGON')
 chan=create_channel_polygon(hecras_channels_file, CRS(spatial_proj))
 chan2=gBuffer(chan,width=0.1, byid=T) # Gets rid of invalid geometry
 chan2=SpatialPolygonsDataFrame(chan2, data=data.frame(DN=seq(1,length(chan2))), match.ID=FALSE) # Needed to write to shapefile
 
+print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
+chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
 
-#@ Write channel polygon to shapefile for viewing in GIS
-writeOGR(chan2,dsn='chan_shapefile5',layer='chan_shapefile',driver='ESRI Shapefile',overwrite=TRUE)
+print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
+ras_storage=get_existing_storage_areas(hecras_channels_file,spatial_proj)
+#stop()
 
 if(channel_only){
+    #@ Write channel polygon to shapefile for viewing in GIS
+    writeOGR(chan2,dsn='chan_shapefile',layer='chan_shapefile',driver='ESRI Shapefile',overwrite=TRUE)
+
+    #@ Write channel boundary points to a shapefile for viewing in GIS
+    writeOGR(chan_boundary_points,dsn='chan_points',layer='chan_points',driver='ESRI Shapefile',overwrite=TRUE)
+
+    #@ Write existing storage areas to shapefile
+    writeOGR(ras_storage, dsn='existing_storage',layer='existing_storage',driver='ESRI Shapefile',overwrite=TRUE)
+    
     print('Completed the channel polygon creation -- will not proceed further while channel_only=TRUE')
-    stop('Deliberate halt')
+    print('(this is not an error!)')
+    stopifnot(!channel_only)
 }
 
 #@ Read storage polygon
@@ -251,9 +266,6 @@ hec_lines2=hec_linestmp
 #@ We can use this to associate lateral structures with x-sections 
 #@
 #@
-print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
-chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
-
 #stop()
 # Loop over all storage-channel intersections
 print("CREATING LATERAL STRUCTURES AT STORAGE-CHANNEL INTERSECTIONS")
@@ -276,4 +288,4 @@ for(i in 1:length(channel_intersections)){
 
 hec_lines2=hec_linestmp
 #@ Write to output
-cat(hec_lines2,file='hectest.g05',sep="\n") 
+cat(hec_lines2,file=output_file,sep="\n") 

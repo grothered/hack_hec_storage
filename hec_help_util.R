@@ -110,12 +110,18 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
     chan_polygons=list()
 
     #@ For each channel, extract the cross-sectional start/end points
-    for(i in 1:(length(chan_ind)-1)){
+    for(i in 1:length(chan_ind)){
         offset=chan_ind[i]-1
+        lb=chan_ind[i]
+        if(i<length(chan_ind)){
+            ub=chan_ind[i+1]
+        }else{
+            ub=length(hec_lines)
+        }
         #@ Only grep the relevant cross-sections
-        xsect_start=grep('XS GIS Cut Line=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
+        xsect_start=grep('XS GIS Cut Line=', hec_lines[lb:ub]) + offset
         #xsect_end=grep('Node Last Edited Time=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
-        xsect_end=grep('#Sta/Elev=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset - 1
+        xsect_end=grep('#Sta/Elev=', hec_lines[lb:ub]) + offset - 1
    
         #@ NOW EXTRACT THE START AND END POINTS OF EACH CROSS-SECTION 
 
@@ -153,6 +159,42 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
         chan2
 }
 
+#################################################################################################
+get_existing_storage_areas<-function(hec_file,spatial_proj){
+    #@ Function to extract storage areas from an existing hec-ras file
+    #@ Useful to plot them up, to help with the creation of new storage areas.
+    fin=file(hec_file, open='r')
+    hec_lines=readLines(fin)
+    close(fin)
+   
+    store_coords_start=grep('Storage Area Surface Line', hec_lines) +1
+    store_coords_end=grep('Storage Area Type', hec_lines) -1
+
+    #@ Loop over all storage areas, and add them to a SpatialPolygonsDataFrame
+    poly_list=list()
+    storage_names=c()
+    for(i in 1:length(store_coords_start)){
+        storage_name=hec_lines[store_coords_start[i]-2]
+        storage_name=strsplit(storage_name, '=')[[1]][2]
+        storage_name=strsplit(storage_name,',')[[1]][1]
+        
+        coord_text=hec_lines[store_coords_start[i]:store_coords_end[i]]
+        coords_out=c()
+        for(j in 1:length(coord_text)){
+            #print(coord_text[j])
+            coords_out=c(coords_out,split_nchars_numeric(coord_text[j],16))
+        }
+        coords_out=matrix(coords_out,ncol=3,byrow=T)
+        coords_out=rbind(coords_out, coords_out[1,])
+
+        poly_list[[i]]=Polygons(list(Polygon(coords_out[,1:2])), ID=storage_name)
+        storage_names=c(storage_names, storage_name) 
+    }
+    storage_sp_poly=SpatialPolygons(poly_list, proj4string=CRS(spatial_proj))
+
+    storage_sp_polydf=SpatialPolygonsDataFrame(storage_sp_poly, data=data.frame(dat=storage_names), match.ID=FALSE)
+    storage_sp_polydf
+}
 #################################################################################################
 
 compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset, upper_bound_stage=100){
@@ -595,6 +637,13 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #@ line along them with 3 times as many points
     weir_line = coordinates(weir_pts)
     ll=length(weir_line[,1])
+    if(ll<2){
+        print('WARNING: Storage area intersects channel at one point') 
+        print('The relevant point is:')
+        print(weir_pts)
+        print('No lateral weir will be made here')
+        return(hec_lines)
+    }
     interpolated_length=3*ll
     weir_line=cbind(weir_line, c(0, cumsum(weir_pts$downstream_distance[1:(ll-1)]))) # Append distance
     weir_line_xint = approx(weir_line[,3], weir_line[,1], n=interpolated_length) # Interpolate x's
