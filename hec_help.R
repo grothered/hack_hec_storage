@@ -152,7 +152,7 @@ if(create_shapefiles_of_existing_rasfile){
     }
 
     #@ Step 1.5: Identify intersections of storage polygons with each other, or with the channel network
-    print("COMPUTING 'NEW STORAGE AREA' INTERSECTIONS")
+    print("COMPUTING 'NEW STORAGE'-'NEW STORAGE' AREA INTERSECTIONS")
     new_storage_intersections=list()
     for(i in 1:length(new_store_list)){
         intersections=c()
@@ -210,8 +210,7 @@ if(create_shapefiles_of_existing_rasfile){
     #@ Step 2: Make a new hec-ras geometry file, which includes the rivers /
     #@ junctions and storage areas only?  Then we can add new storage area
     #@ connections / lateral weirs to this. Then, the user can import these only,
-    #@ using hecs import functionality. This seems safer than trying to
-    #@ automatically avoid duplicating / skipping already defined storage areas
+    #@ using hecs import functionality. 
      
     #@ Read file
     fin=file(hecras_channels_file, open='r')
