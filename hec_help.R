@@ -163,20 +163,22 @@ if(create_shapefiles_of_existing_rasfile){
     
     print("COMPUTING 'NEW STORAGE' - 'OLD STORAGE' AREA INTERSECTIONS")
     old_storage_intersections=list()
-    for(i in 1:length(new_store_list)){
-        intersections=c()
-        for(j in 1:length(old_store_list)){
-            
-            if(gIntersects(new_store_list[[i]], old_store_list[[j]])){
-                intersections=c(intersections,j)
-            } 
+    if(length(old_store_list>0)){
+        for(i in 1:length(new_store_list)){
+            intersections=c()
+            for(j in 1:length(old_store_list)){
+                
+                if(gIntersects(new_store_list[[i]], old_store_list[[j]])){
+                    intersections=c(intersections,j)
+                } 
+            }
+            if(is.null(intersections)){
+                old_storage_intersections[[i]]=NA
+            }else{
+                old_storage_intersections[[i]]=intersections
+            }
         }
-        if(is.null(intersections)){
-            old_storage_intersections[[i]]=NA
-        }else{
-            old_storage_intersections[[i]]=intersections
-        }
-    } 
+    }
 
 
     print("COMPUTING 'NEW STORAGE' - CHANNEL AREA INTERSECTIONS")
@@ -279,6 +281,50 @@ if(create_shapefiles_of_existing_rasfile){
                    hec_lines2[(end_storage_inds+1):ll])
 
     hec_lines2=hec_linestmp
+
+
+    #@
+    #@ Step 2.3 -- Loop over all overlapping storage areas, and make a storage area connection
+    #@
+    print("CONSTRUCTING STORAGE AREA CONNECTION GEOMETRIES AT 'NEW STORAGE'-'OLD STORAGE' INTERSECTIONS")
+    storage_connection_text_all=c()
+    for(i in 1:length(old_storage_intersections)){
+      intersections=old_storage_intersections[[i]]
+      if(is.na(intersections)) next
+      
+      for(j in 1:length(intersections)){
+          k=intersections[j]
+          storage_connection_text=
+              make_storage_connection_text( new_store_list[[i]], old_store_list[[k]], 
+                                            new_storage_names[[i]], old_storage$names[k],
+                                            lidar_DEM,vertical_datum_offset)    
+          storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+      }
+
+
+    }
+
+    #@
+    #@ Insert storage area connection text into the output file
+    #@
+
+    #@ find appropriate index
+    end_storage_inds=max(grep("^Conn HTab HWMax=", hec_lines2)) # Last or second last line of storage areas
+    if(hec_lines2[end_storage_inds+1]!=""){
+        end_storage_inds=end_storage_inds+2
+    }else{
+        end_storage_inds=end_storage_inds+1
+
+    }
+
+    #@ Do insertion
+    ll=length(hec_lines2)
+    hec_linestmp=c(hec_lines2[1:end_storage_inds], 
+                   storage_connection_text_all, 
+                   hec_lines2[(end_storage_inds+1):ll])
+
+    hec_lines2=hec_linestmp
+
 
 
     #@
