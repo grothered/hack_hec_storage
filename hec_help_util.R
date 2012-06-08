@@ -217,7 +217,7 @@ compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset, u
     #@ Ensure 5<= number of points <= 60. Ideally, only give a new point every 0.33 m 
     num_stagevol_points=min(60, max(5, (max(elev_pts[[1]])-min(elev_pts[[1]]) )*3 ) ) 
 
-    elev_hist=hist(elev_pts[[1]],n=60)
+    elev_hist=hist(elev_pts[[1]],n=num_stagevol_points)
 
     # Compute a sequence of stages at which we will evaluate the stored volume
     lower_bound=elev_hist$mids[1]-0.1 #
@@ -710,6 +710,12 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
         }
         print(' ')
     }
+    
+    # Don't allow > 100 intersecting channel points
+    if(length(weir_pts[,1])>99){
+        weir_pts=weir_pts[1:99,]
+    }
+
 
     #@ Sort the bank stations
     st1=as.character(weir_pts$station_name)
