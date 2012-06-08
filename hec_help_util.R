@@ -209,7 +209,8 @@ compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset, u
     # lots of 10*10 squares filled in a metre of water to account for one unit.
     # Hence the strange use of units above
 
-    elev_pts=lidar_DEM[my_poly] # Elevation points inside the polygon
+    #elev_pts=lidar_DEM[my_poly] # Elevation points inside the polygon
+    elev_pts=extract(lidar_DEM, my_poly, small=TRUE)
     elev_hist=hist(elev_pts[[1]],n=60)
 
     # Compute a sequence of stages at which we will evaluate the stored volume
@@ -339,9 +340,11 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
     #@ Add volume - elev information
     l=length(elev_vol[,1])
     output_text=c(output_text,paste('Storage Area Vol Elev=', l) )
-    elev_coord=format(as.character(round(elev_vol[,1],2)), width=8,justify='right',trim=T)
+    #elev_coord=format(as.character(round(elev_vol[,1],2)), width=8,justify='right',trim=T)
+    elev_coord=pad_string(as.character(round(elev_vol[,1],2)), charlen=8,pad=" ", justify='right')
     #vol_coord=elev_vol[,2]
-    vol_coord=format(as.character(signif(elev_vol[,2],5)),width=8,justify='right',trim=T)
+    #vol_coord=format(as.character(signif(elev_vol[,2],5)),width=8,justify='right',trim=T)
+    vol_coord=pad_string(as.character(signif(elev_vol[,2],6)), charlen=8,pad=" ", justify='right')
 
     next_lines=paste(elev_coord,vol_coord,sep="")
     # Get the format right
@@ -384,7 +387,14 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     #@ Conn HTab HWMax=40
     #@
     #@
-        
+    print(' ')
+    print('#########################################')
+    print(paste('Connecting ', name1, 'with', name2))
+    print(paste('These are located near'))
+    print(coordinates(store1))
+    print(coordinates(store2))
+    print('#########################################')
+    print(' ')    
     intersection=gIntersection(store1, store2) # Polygon containing the intersection of the 2 storage areas
    
     #@ Check that they do not overlap too much -- could be a problem
@@ -473,7 +483,17 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     #@
     #@ Compute weir form 
     #@
-    elev_relation=lidar_DEM[intersection][[1]] 
+    
+    #elev_relation=lidar_DEM[intersection][[1]]
+    elev_relation=extract(lidar_DEM, intersection, small=TRUE)[[1]]
+    #if(length(elev_relation)==0){
+    #    print(' ')
+    #    print('WARNING: Not creating a storage area connection for')
+    #    print(paste(name1, ' to ', name2))
+    #    print('Because the overlap is too small to enclose any points in the DEM')
+    #    return(NA)
+    #}
+        
     elev_relation=elev_relation+ vertical_datum_offset
     l=length(elev_relation)
     elev_relation2=sort(elev_relation)
@@ -483,11 +503,26 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     #@ If we assume poly is long and thin, then length~ = boundary length /2 
     #@ We could make it of slightly shorter length to be conservative (e.g. boundary_length *1/3 or *5/12)
     weir_length = gLength(intersection)*1/3
+    
+    if(weir_length<5){
+        print(' ')
+        print('WARNING: Not creating a storage area connection for')
+        print(paste(name1, ' to ', name2))
+        print('Because the computed weir length is small. It is')
+        print(weir_length)
+        return(NA)
+    }
+        
 
     weir_x_vals=seq(0,weir_length, len=l) # X values at which we will get weir elevation points
     l2=min(l,10) # Number of points on the weir in hec-ras
 
-    weir_relation=approx(weir_x_vals, elev_relation2, n=l2) # Weir x - elev relation
+    if(l>1){
+        weir_relation=approx(weir_x_vals, elev_relation2, n=l2) # Weir x - elev relation
+    }else{
+        # Treat the case of only one point
+        weir_relation=approx(c(0, weir_length), c(elev_relation2, elev_relation2),n=l2)
+    }
 
     weir_x=pad_string(as.character(signif(weir_relation$x,7)), 8, pad=" ", justify='right')
     weir_y=pad_string(as.character(signif(weir_relation$y,7)), 8, pad=" ", justify='right')
@@ -626,15 +661,44 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     intersection=gIntersection(storage_poly,chan_poly)
   
     #@ Get channel boundary points 
+    vv=over(chan_pts, intersection)
+    vv=which(!is.na(vv))
+    if(length(vv)==0){
+        print('##')
+        print(paste('WARNING: There is an intersection of', storage_name, ' with the channel.'))
+        print('However, it does not contain any bank points')
+        print('Skipping this one')    
+        print(' ')
+        return(hec_lines)
+    }
     weir_pts=chan_pts[intersection,]
+
+    #@ If there are no points, then move on
+    if(length(weir_pts)==0){
+        return(hec_lines)
+    }
 
     #@ Check to ensure we intersect the channel on only 1 bank
     banks=weir_pts$bank
     bank2=union(banks,banks)
     if(length(bank2)>1){
-        print(paste('ERROR: Storage polygon,', storage_name, "intersects on both the left and right banks"))
-        print(weir_pts)
-        stop('FIX THIS BEFORE CONTINUING')
+        print('####################')
+        print(paste('WARNING: Storage polygon,', storage_name, "intersects on both the left and right banks"))
+        print(paste('It is located near'))
+        print(coordinates(weir_pts[1,]))
+        num_left=sum(weir_pts$bank=='L')
+        num_right=sum(weir_pts$bank=='R')
+        print(paste('There are', num_left, 'points on the left bank, and', num_right, 'points on the right bank'))
+        if(num_left>num_right){
+            print('Using only points on the left bank')
+            weir_pts=weir_pts[weir_pts$bank=='L',]
+            bank2='L'
+        }else{
+            print('Using only points on the right bank')
+            weir_pts=weir_pts[weir_pts$bank=='R',]
+            bank2='R'
+        }
+        print(' ')
     }
 
     #@ Sort the bank stations
@@ -644,8 +708,37 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
 
     #@ Sort the weir points along the channel
     station_order=sort(st3,index.return=T, decreasing=T)
-    weir_pts=weir_pts[station_order$ix,] 
 
+    #@ Remove start and end points -- hec will not accept connections at start/end of channel
+    if(length(station_order$ix>2)){
+        station_order_inside=station_order$ix[2:(length(station_order$ix)-1)]
+        weir_pts=weir_pts[station_order_inside,] 
+
+        #@ Re-define key variables
+        st1=as.character(weir_pts$station_name)
+        st2=gsub('\\*', '', st1) # Remove * symbol
+        st3=as.numeric(st2) # Now they are numbers
+
+        #@ Sort the weir points along the channel
+        station_order=sort(st3,index.return=T, decreasing=T)
+    }else{
+        print('##')
+        print(paste('WARNING: There is an intersection of', storage_name, ' with the channel.'))
+        print('However, it does not contain more than 2 bank points')
+        print('Skipping this one')    
+        print(' ')
+        return(hec_lines)
+    }
+
+    tmp_coord=as.character(coordinates(weir_pts)[1,])
+    tmp_name=weir_pts$reach_name[1]
+    tmp_stat=weir_pts$station_name[1]
+    print(' ')
+    print('##############################')
+    print(paste('Connecting ', storage_name, ' to the river', tmp_name, 'at station', tmp_stat, ' near:'))
+    print(tmp_coord)
+    print('##############################')
+    print(' ')  
     #@ Get coordinates of the weir points, and downstream distances, and make a
     #@ line along them with 3 times as many points
     weir_line = coordinates(weir_pts)
@@ -661,7 +754,7 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
         print(' ')
         return(hec_lines)
     }
-    interpolated_length=3*ll
+    interpolated_length=min(3*ll,80)
     weir_line=cbind(weir_line, c(0, cumsum(weir_pts$downstream_distance[1:(ll-1)]))) # Append distance
     weir_line_xint = approx(weir_line[,3], weir_line[,1], n=interpolated_length) # Interpolate x's
     weir_line_yint = approx(weir_line[,3], weir_line[,2], n=interpolated_length) # Interpolate y's
@@ -712,8 +805,8 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     output_text=c(output_text, paste("Lateral Weir SE= ",interpolated_length,sep=""))
 
     #@ Add weir distance-elevation information
-    weir_x=pad_string(as.character(signif(weir_relation[,1],7)), 8, pad=" ", justify='right')
-    weir_y=pad_string(as.character(signif(weir_relation[,2],7)), 8, pad=" ", justify='right')
+    weir_x=pad_string(as.character(round(weir_relation[,1],3)), 8, pad=" ", justify='right')
+    weir_y=pad_string(as.character(round(weir_relation[,2],3)), 8, pad=" ", justify='right')
     weir_text=paste(weir_x,weir_y,sep="")
     weir_text=format_in_rows(weir_text,5)
     output_text=c(output_text, weir_text)

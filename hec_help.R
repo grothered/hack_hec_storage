@@ -58,14 +58,17 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='May_june_2012.g05'
+hecras_channels_file='May_june_2012.g11'
 output_file='hectest.g05'
-potential_storage_file='manual_store/storage_2.shp'
+potential_storage_file='Storage1/storage1.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-create_shapefiles_of_existing_rasfile=TRUE
+create_shapefiles_of_existing_rasfile=FALSE
 vertical_datum_offset=10.5
+logfile='Rlog.log'
 
+
+#sink(logfile, split=TRUE)
 
 storage_file_layername=basename(potential_storage_file) # Might need to edit this
 storage_file_layername=strsplit(storage_file_layername, "\\.")[[1]][1]
@@ -226,10 +229,10 @@ if(create_shapefiles_of_existing_rasfile){
     new_storage_names=list()
     #@ We wish to keep the names of storage areas unique. One way to attempt to
     #@ do this is to append a timestamp to the name
-    name_timestamp=floor(as.numeric(Sys.time())*100)%%1000000+i # Generic stamp for storage name
+    name_timestamp=floor(as.numeric(Sys.time())*100)%%10000000+i # Generic stamp for storage name
     for(i in 1:length(new_store_list)){
         #name=paste('Fake_store',i,sep="") # Name for storage area
-        new_storage_names[[i]]=paste('St',(name_timestamp+i),sep="") # Name for storage area
+        new_storage_names[[i]]=paste('S',(name_timestamp+i),sep="") # Name for storage area
         storage_text[[i]]=make_storage_area_text(new_store_list[[i]], new_store_stage_vol_list[[i]], new_storage_names[[i]])
     }
 
@@ -256,7 +259,7 @@ if(create_shapefiles_of_existing_rasfile){
     storage_connection_text_all=c()
     for(i in 1:length(new_storage_intersections)){
       intersections=new_storage_intersections[[i]]
-      if(is.na(intersections)) next
+      if(is.na(intersections[1])) next
       
       for(j in 1:length(intersections)){
           k=intersections[j]
@@ -264,7 +267,9 @@ if(create_shapefiles_of_existing_rasfile){
               make_storage_connection_text( new_store_list[[i]], new_store_list[[k]], 
                                             new_storage_names[[i]], new_storage_names[[k]],
                                             lidar_DEM,vertical_datum_offset)    
-          storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+          if(!is.na(storage_connection_text[1])){
+              storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+          }
       }
 
 
@@ -299,15 +304,17 @@ if(create_shapefiles_of_existing_rasfile){
     storage_connection_text_all=c()
     for(i in 1:length(old_storage_intersections)){
       intersections=old_storage_intersections[[i]]
-      if(is.na(intersections)) next
+      if(is.na(intersections[1])) next
       
       for(j in 1:length(intersections)){
           k=intersections[j]
           storage_connection_text=
               make_storage_connection_text( new_store_list[[i]], old_store_list[[k]], 
-                                            new_storage_names[[i]], old_storage$names[k],
+                                            new_storage_names[[i]], old_storage$name[k],
                                             lidar_DEM,vertical_datum_offset)    
-          storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+          if(!is.na(storage_connection_text[1])){
+              storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+          }
       }
 
 
@@ -348,10 +355,11 @@ if(create_shapefiles_of_existing_rasfile){
     hec_linestmp=hec_lines2 # Copy output file for modification
     for(i in 1:length(channel_intersections)){
 
-        if(is.na(channel_intersections[[i]])) next
+        if(is.na(channel_intersections[[i]][1])) next
 
         for(j in 1:length(channel_intersections[[i]])){
             k=channel_intersections[[i]][j]
+            print(c(i,k))
             #@ Iteratively update hec_linestmp by inserting laterl weir
             hec_linestmp=make_lateral_weir_text(new_store_list[[i]], new_storage_names[[i]],
                                                      chan2_list[[k]], chan_boundary_points, 
