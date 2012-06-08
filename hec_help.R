@@ -65,8 +65,12 @@
 #    The elevation of the weir is selected based on the elevations of the
 #    raster DEM over that zone.
 #
-#    NOTE: Because hec-ras cannot have overlapping lateral weirs, we only connect the storage area
-#          to bank points which are not in any other storage area. 
+#    NOTE: Because hec-ras cannot have overlapping lateral weirs, we only
+#    connect the storage area to bank points which are not in any other storage
+#    area. 
+#
+#    NOTE: Hec-RAS can only have weirs covering < 100 cross-sections. We
+#    truncate weirs to meet this requirement
 #
 #######################################################################
 
