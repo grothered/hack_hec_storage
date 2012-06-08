@@ -110,6 +110,7 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
     chan_polygons=list()
 
     #@ For each channel, extract the cross-sectional start/end points
+    #@ lb = start (lower bound), ub = end (upper bound)
     for(i in 1:length(chan_ind)){
         offset=chan_ind[i]-1
         lb=chan_ind[i]
@@ -211,6 +212,11 @@ compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset, u
 
     #elev_pts=lidar_DEM[my_poly] # Elevation points inside the polygon
     elev_pts=extract(lidar_DEM, my_poly, small=TRUE)
+   
+    #@ Number of points on the stage - volume curve. 
+    #@ Ensure 5<= number of points <= 60. Ideally, only give a new point every 0.33 m 
+    num_stagevol_points=min(60, max(5, (max(elev_pts[[1]])-min(elev_pts[[1]]) )*3 ) ) 
+
     elev_hist=hist(elev_pts[[1]],n=60)
 
     # Compute a sequence of stages at which we will evaluate the stored volume
@@ -403,11 +409,13 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     A3=gArea(intersection)
     
     overlap_max=A3/min(A1,A2)
-    if(overlap_max>0.2){
+    overlap_error_threshold=0.2
+    if(overlap_max>overlap_error_threshold){
         print('')
         print('#################################################')
-        stop(paste('ERROR: Storage areas', name1, 'and', name2, 'overlap by > 20%. 
-                    This sounds like an error - check your input data'))
+        stop(paste('ERROR: Storage areas', name1, 'and', name2, 'overlap by > ', 
+                    overlap_error_threshold*100, '%. This sounds like an error', 
+                    '- check your input data'))
     }
     
     output_text=c() # Predefine output
@@ -495,7 +503,6 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     #}
         
     elev_relation=elev_relation+ vertical_datum_offset
-    l=length(elev_relation)
     elev_relation2=sort(elev_relation)
     #@ How to compute the weir length??
     #@ Idea:
@@ -503,8 +510,9 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     #@ If we assume poly is long and thin, then length~ = boundary length /2 
     #@ We could make it of slightly shorter length to be conservative (e.g. boundary_length *1/3 or *5/12)
     weir_length = gLength(intersection)*1/3
-    
-    if(weir_length<5){
+   
+    minimum_weir_length=5 
+    if(weir_length<minimum_weir_length){
         print(' ')
         print('WARNING: Not creating a storage area connection for')
         print(paste(name1, ' to ', name2))
@@ -513,14 +521,15 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
         return(NA)
     }
         
-
+    l=length(elev_relation)
     weir_x_vals=seq(0,weir_length, len=l) # X values at which we will get weir elevation points
-    l2=min(l,10) # Number of points on the weir in hec-ras
+    l2=min(l,30) # Number of points on the weir in hec-ras
 
     if(l>1){
         weir_relation=approx(weir_x_vals, elev_relation2, n=l2) # Weir x - elev relation
     }else{
         # Treat the case of only one point
+        l2=2
         weir_relation=approx(c(0, weir_length), c(elev_relation2, elev_relation2),n=l2)
     }
 
@@ -542,6 +551,7 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
 ###############################################################################################################
 
 make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
+    #@ Produce a shapefile containing the end points of the cross-sections 
 
     #@ Read file
     fin=file(hec_chan_file, open='r')
@@ -710,7 +720,7 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     station_order=sort(st3,index.return=T, decreasing=T)
 
     #@ Remove start and end points -- hec will not accept connections at start/end of channel
-    if(length(station_order$ix>2)){
+    if(length(station_order$ix)>2){
         station_order_inside=station_order$ix[2:(length(station_order$ix)-1)]
         weir_pts=weir_pts[station_order_inside,] 
 
@@ -725,7 +735,7 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
         print('##')
         print(paste('WARNING: There is an intersection of', storage_name, ' with the channel.'))
         print('However, it does not contain more than 2 bank points')
-        print('Skipping this one')    
+        print('I am skipping this one')    
         print(' ')
         return(hec_lines)
     }
@@ -774,7 +784,9 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #@ 
 
     #@ Define weir station name, just downstream of the most upstream bank station
-    lateral_weir_distance=0.02*(station_order$x[1]-station_order$x[2])
+    #@ Use a different distance for left and right bank points -- trick to
+    #@ avoid weirs on both banks with the same station name
+    lateral_weir_distance=(0.25 + 0.5*(bank2=='R'))*(station_order$x[1]-station_order$x[2])
     weir_station_name=station_order$x[1]- lateral_weir_distance
 
     output_text=c()

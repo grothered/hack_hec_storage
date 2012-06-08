@@ -34,6 +34,8 @@
 #    Creates a polygon shapefile of the existing storage areas
 #    Creates a polygon shapefile of the channel bank points
 #
+#    These files are written to hard-coded directories in the local directory
+#
 #    The code will stop here if 'create_shapefiles_of_existing_rasfile=TRUE', which can be useful if you
 #    just want to create a channel polygon
 #
@@ -46,14 +48,22 @@
 #    is created as a weir, with the heights over the weir reflecting the
 #    heights in the DEM within the intersection zone. This is added to the
 #    hec-ras geometry file.
+#
 #    [Note that the weir length = intersection_polygon_boundary_length/3, which
 #    should be approximately correct for a relatively wide, narrow intersection
 #    polygon. This could potentially be done in a more refined way].
 #
+#    [Note that at present, if the weir length is computed as < 5m, then no weir is constructed
+#     This is to prevent very small intersections producing a storage area connection]
+#
 # 4) Computes all the intersections of polygons in the storage shapefile, with
-#    the channel shapefile These are taken as sites where a 'lateral weir
-#    connection' is to be located. The elevation of the weir is selected based on
-#    the elevations of the raster DEM over that zone.
+#    the channel shapefile.
+#
+#    These are taken as sites where a 'lateral weir connection' is to be
+#    located, SO LONG AS THEY CONTAIN MORE THAN 2 BANK POINTS. 
+#
+#    The elevation of the weir is selected based on the elevations of the
+#    raster DEM over that zone.
 #
 #######################################################################
 
@@ -68,7 +78,8 @@ vertical_datum_offset=10.5
 logfile='Rlog.log'
 
 
-#sink(logfile, split=TRUE)
+# Start sending output to a file
+sink(logfile, split=TRUE)
 
 storage_file_layername=basename(potential_storage_file) # Might need to edit this
 storage_file_layername=strsplit(storage_file_layername, "\\.")[[1]][1]
@@ -155,9 +166,12 @@ if(create_shapefiles_of_existing_rasfile){
     }
 
     #@ Step 1.5: Identify intersections of storage polygons with each other, or with the channel network
+    #@           While we do this, we make a set of polygons including the unique parts of storage areas
     print("COMPUTING 'NEW STORAGE'-'NEW STORAGE' AREA INTERSECTIONS")
     new_storage_intersections=list()
+    unique_new_store_list=list() # This will store the unique part of the storage area
     for(i in 1:length(new_store_list)){
+        unique_new_store_list[[i]]=new_store_list[[i]]
         intersections=c()
         for(j in i:length(new_store_list)){
             # Note that we only loop from i, so we avoid double counting connections
@@ -165,6 +179,8 @@ if(create_shapefiles_of_existing_rasfile){
 
             if(gIntersects(new_store_list[[i]], new_store_list[[j]])){
                 intersections=c(intersections,j)
+                # Record the non-intersecting area
+                unique_new_store_list[[i]] = gDifference(unique_new_store_list[[i]], new_store_list[[j]])
             } 
         }
         if(is.null(intersections)){
@@ -360,8 +376,10 @@ if(create_shapefiles_of_existing_rasfile){
         for(j in 1:length(channel_intersections[[i]])){
             k=channel_intersections[[i]][j]
             print(c(i,k))
-            #@ Iteratively update hec_linestmp by inserting laterl weir
-            hec_linestmp=make_lateral_weir_text(new_store_list[[i]], new_storage_names[[i]],
+            #@ Iteratively update hec_linestmp by inserting lateral weir
+            #@ Use only unique parts of storage areas -- HEC RAS cannot have
+            #@ overlapping lateral structures
+            hec_linestmp=make_lateral_weir_text(unique_new_store_list[[i]], new_storage_names[[i]],
                                                      chan2_list[[k]], chan_boundary_points, 
                                                      lidar_DEM, vertical_datum_offset, 
                                                      hec_linestmp)
@@ -374,4 +392,5 @@ if(create_shapefiles_of_existing_rasfile){
     #@ Write to output
     cat(hec_lines2,file=output_file,sep="\n") 
 
+    sink()
 }
