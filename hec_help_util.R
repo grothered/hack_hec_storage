@@ -106,7 +106,7 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
 
     #@ Identify channels
     chan_ind=grep('River Reach=', hec_lines)
-
+    #browser()
     chan_polygons=list()
 
     #@ For each channel, extract the cross-sectional start/end points
@@ -123,6 +123,23 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
         xsect_start=grep('XS GIS Cut Line=', hec_lines[lb:ub]) + offset
         #xsect_end=grep('Node Last Edited Time=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
         xsect_end=grep('#Sta/Elev=', hec_lines[lb:ub]) + offset - 1
+
+        # Treat the case of channels without xsections
+        if(length(xsect_start)==0){
+            err_mess = paste('ERROR: The following reach appears to not have any cross-sections', 
+                             '\n', hec_lines[chan_ind[i]], '\n 
+                               This will cause hec_help.R to fail :( \n',
+                               ' Try adding 2 artificial cross-sections to the reach, or deleting it')
+            stop(err_mess)
+        }
+        
+        # Logical check that start and ends of x-sections line up.
+        for(j in 1:length(xsect_start)){
+            if(xsect_start[j]>xsect_end[j]){
+                stop('ERROR: xsect_start is greater than xsect_end.  Check that
+                      all cutlines in your hec-ras geometry file are georeferenced')
+            }
+        }
    
         #@ NOW EXTRACT THE START AND END POINTS OF EACH CROSS-SECTION 
 
@@ -170,6 +187,9 @@ get_existing_storage_areas<-function(hec_file,spatial_proj){
    
     store_coords_start=grep('Storage Area Surface Line', hec_lines) +1
     store_coords_end=grep('Storage Area Type', hec_lines) -1
+
+    # Treat case with no storage areas
+    if(length(store_coords_start)==0) return(NULL) 
 
     #@ Loop over all storage areas, and add them to a SpatialPolygonsDataFrame
     poly_list=list()
@@ -566,18 +586,32 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
     #@ For each channel, extract the cross-sectional start/end points
     output_coords=c()
     output_data=c()
-    for(i in 1:(length(chan_ind)-1)){
+    for(i in 1:length(chan_ind)){
 
         offset=chan_ind[i]-1
+        lb=chan_ind[i]
+        if(i<length(chan_ind)){
+            ub=chan_ind[i+1]
+        }else{
+            ub=length(hec_lines)
+        }
+
         #@ Only grep the relevant cross-sections
-        xsect_start=grep('XS GIS Cut Line=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
+        xsect_start=grep('XS GIS Cut Line=', hec_lines[lb:ub]) + offset
         #xsect_end=grep('Node Last Edited Time=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
-        xsect_end=grep('#Sta/Elev=', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset - 1
-       
+        xsect_end=grep('#Sta/Elev=', hec_lines[lb:ub]) + offset - 1
+      
+        if(length(xsect_start)==0){
+            err_mess = paste('ERROR: The following reach appears to not have any cross-sections', 
+                             '\n', hec_lines[chan_ind[i]], '\n 
+                               This will cause hec_help.R to fail :( \n',
+                               ' Try adding 2 artificial cross-sections to the reach, or deleting it')
+            stop(err_mess)
+        }
         # Useful to have the 'station' lines as well. Initially I tried to use
         # this as the definition of xsect_start, however, I decided that was
         # not the best. However, we need this line to get the station number
-        station_start=grep('Type RM Length L Ch R =', hec_lines[chan_ind[i]: chan_ind[i+1]]) + offset
+        station_start=grep('Type RM Length L Ch R =', hec_lines[lb:ub]) + offset
    
         #@ NOW EXTRACT THE START AND END POINTS OF EACH CROSS-SECTION 
 

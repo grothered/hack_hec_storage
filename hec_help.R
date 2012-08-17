@@ -6,7 +6,7 @@
 #
 # This code takes as input:
 #
-# 1) A hec-ras .g0x file (describing the geometry)
+# 1) A hec-ras .g0x file (describing the geometry), WHERE ALL THE CROSS-SECTIONAL CUTLINES ARE GEOREFERENCED
 #
 # 2) A polygon shapefile (storage shapefile) containing several individual
 #    polygons which the user would like to add as storage areas to the hec-ras
@@ -75,12 +75,13 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='May_june_2012.g11'
+hecras_channels_file='north_of_pasig_merg.g01' #'May_june_2012.g27'
+#hecras_channels_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/model/store_geometry_and_boundaries/2012_07_17/May_june_2012.g29'
 output_file='hectest.g05'
-potential_storage_file='Storage1/storage1.shp'
+potential_storage_file='store_test/store_test.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-create_shapefiles_of_existing_rasfile=FALSE
+create_shapefiles_of_existing_rasfile=TRUE
 vertical_datum_offset=10.5
 logfile='Rlog.log'
 
@@ -127,8 +128,9 @@ if(create_shapefiles_of_existing_rasfile){
     try(writeOGR(chan_boundary_points,dsn='chan_points',layer='chan_points',driver='ESRI Shapefile',overwrite=TRUE))
 
     #@ Write existing storage areas to shapefile
-    try(writeOGR(old_storage, dsn='existing_storage',layer='existing_storage',driver='ESRI Shapefile',overwrite=TRUE))
-    
+    if(!is.null(old_storage)){
+        try(writeOGR(old_storage, dsn='existing_storage',layer='existing_storage',driver='ESRI Shapefile',overwrite=TRUE))
+    } 
     print(' ')
     print('Tried to create polygons from hec-ras files creation') 
     print('I will not proceed further while create_shapefiles_of_existing_rasfile=TRUE.')
@@ -151,9 +153,11 @@ if(create_shapefiles_of_existing_rasfile){
         new_store_list[[i]]=SpatialPolygons(new_store_simp@polygons[i], proj4string=CRS(spatial_proj))
     }
 
-    old_store_list=list()
-    for(i in 1:length(old_storage@polygons)){
-        old_store_list[[i]]=SpatialPolygons(old_storage@polygons[i], proj4string=CRS(spatial_proj))
+    if(!is.null(old_storage)){
+        old_store_list=list()
+        for(i in 1:length(old_storage@polygons)){
+            old_store_list[[i]]=SpatialPolygons(old_storage@polygons[i], proj4string=CRS(spatial_proj))
+        }
     }
 
     #@ Convert chan2 to a list of SpatialPolygons
@@ -196,26 +200,27 @@ if(create_shapefiles_of_existing_rasfile){
             new_storage_intersections[[i]]=intersections
         }
     } 
-    
-    print("COMPUTING 'NEW STORAGE' - 'OLD STORAGE' AREA INTERSECTIONS")
-    old_storage_intersections=list()
-    if(length(old_store_list)>0){
-        for(i in 1:length(new_store_list)){
-            intersections=c()
-            for(j in 1:length(old_store_list)){
-                
-                if(gIntersects(new_store_list[[i]], old_store_list[[j]])){
-                    intersections=c(intersections,j)
-                } 
-            }
-            if(is.null(intersections)){
-                old_storage_intersections[[i]]=NA
-            }else{
-                old_storage_intersections[[i]]=intersections
+   
+    if(!is.null(old_storage)){ 
+        print("COMPUTING 'NEW STORAGE' - 'OLD STORAGE' AREA INTERSECTIONS")
+        old_storage_intersections=list()
+        if(length(old_store_list)>0){
+            for(i in 1:length(new_store_list)){
+                intersections=c()
+                for(j in 1:length(old_store_list)){
+                    
+                    if(gIntersects(new_store_list[[i]], old_store_list[[j]])){
+                        intersections=c(intersections,j)
+                    } 
+                }
+                if(is.null(intersections)){
+                    old_storage_intersections[[i]]=NA
+                }else{
+                    old_storage_intersections[[i]]=intersections
+                }
             }
         }
     }
-
 
     print("COMPUTING 'NEW STORAGE' - CHANNEL AREA INTERSECTIONS")
     channel_intersections=list()
@@ -323,23 +328,24 @@ if(create_shapefiles_of_existing_rasfile){
     #@
     #@ Step 2.3 -- Loop over all overlapping storage areas, and make a storage area connection
     #@
-    print("CONSTRUCTING STORAGE AREA CONNECTION GEOMETRIES AT 'NEW STORAGE'-'OLD STORAGE' INTERSECTIONS")
-    storage_connection_text_all=c()
-    for(i in 1:length(old_storage_intersections)){
-      intersections=old_storage_intersections[[i]]
-      if(is.na(intersections[1])) next
-      
-      for(j in 1:length(intersections)){
-          k=intersections[j]
-          storage_connection_text=
-              make_storage_connection_text( new_store_list[[i]], old_store_list[[k]], 
-                                            new_storage_names[[i]], old_storage$name[k],
-                                            lidar_DEM,vertical_datum_offset)    
-          if(!is.na(storage_connection_text[1])){
-              storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+    if(!is.null(old_storage)){
+        print("CONSTRUCTING STORAGE AREA CONNECTION GEOMETRIES AT 'NEW STORAGE'-'OLD STORAGE' INTERSECTIONS")
+        storage_connection_text_all=c()
+        for(i in 1:length(old_storage_intersections)){
+          intersections=old_storage_intersections[[i]]
+          if(is.na(intersections[1])) next
+          
+          for(j in 1:length(intersections)){
+              k=intersections[j]
+              storage_connection_text=
+                  make_storage_connection_text( new_store_list[[i]], old_store_list[[k]], 
+                                                new_storage_names[[i]], old_storage$name[k],
+                                                lidar_DEM,vertical_datum_offset)    
+              if(!is.na(storage_connection_text[1])){
+                  storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
+              }
           }
-      }
-
+        }
 
     }
 
