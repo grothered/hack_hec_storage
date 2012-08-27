@@ -75,7 +75,7 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='north_of_pasig_merg.g01' #'May_june_2012.g27'
+hecras_channels_file='PasigN_merged.g04'#'May_june_2012.g29' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
 #hecras_channels_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/model/store_geometry_and_boundaries/2012_07_17/May_june_2012.g29'
 output_file='hectest.g05'
 potential_storage_file='store_test/store_test.shp'

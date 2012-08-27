@@ -166,13 +166,28 @@ create_channel_polygon<-function(hec_chan_file, spatial_proj){
         #@ spatialpolygonsdataframe later
 
         chan_polygons[[i]] = (Polygons(list(Polygon(coords_all)), ID=as.character(i)))
-
+        if(chan_polygons[[i]]@area ==0){
+            print( 
+                 paste(c( '##############################################################################\n',
+                          'ERROR: zero area for channel polygon ', i,' , ', hec_lines[chan_ind[i]], '\n',
+                          'This probably means that the reach has less than 2 cross-sections \n',
+                          'You need at least 2 cross-sections on every reach \n',
+                          '##############################################################################\n',
+                          ' '))
+                 )
+            chan_polygons[[i]]=NULL
+        }
         
     }
+        # Catch errors in reach definition
+        if(any( unlist ( lapply(chan_polygons, is.null) ) ) ){
+            stop('Will not proceed until you fix the above reaches')
+        }
         #@ Now coerce output to SpatialPolygonsDataFrame
         chan=SpatialPolygons(chan_polygons, proj4string=spatial_proj)
 
         chan2=SpatialPolygonsDataFrame(chan, data=data.frame(id=seq(1,length(chan_polygons))), match.ID=FALSE)
+
 
         chan2
 }
