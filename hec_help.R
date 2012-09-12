@@ -82,6 +82,7 @@ potential_storage_file='store_test/store_test.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 create_shapefiles_of_existing_rasfile=TRUE
+limit_weir_elevation_by_channel_bank_elevation=FALSE
 vertical_datum_offset=10.5
 logfile='Rlog.log'
 
@@ -115,7 +116,7 @@ chan2=SpatialPolygonsDataFrame(chan2, data=data.frame(DN=seq(1,length(chan2))), 
 
 print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
-
+browser()
 print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
 print(' ')
 old_storage=get_existing_storage_areas(hecras_channels_file,spatial_proj)
@@ -404,7 +405,8 @@ if(create_shapefiles_of_existing_rasfile){
             hec_linestmp=make_lateral_weir_text(unique_new_store_list[[i]], new_storage_names[[i]],
                                                      chan2_list[[k]], chan_boundary_points, 
                                                      lidar_DEM, vertical_datum_offset, 
-                                                     hec_linestmp)
+                                                     hec_linestmp, 
+                                                     limit_weir_elevation_by_channel_bank_elevation)
 
         }
 

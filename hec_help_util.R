@@ -638,6 +638,8 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
         station_name=c()
         left_bank_downstream_dist=c()
         right_bank_downstream_dist=c()
+        left_bank_elev=c()
+        right_bank_elev=c()
         for(j in 1:length(xsect_start)){  # Loop over all xsections
             cutline_text=hec_lines[(xsect_start[j]+1):(xsect_end[j]-1)]
             coords=c()
@@ -645,6 +647,7 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
                 coords1=split_nchars_numeric(cutline_text[k],16)
                 coords=rbind(coords,matrix(coords1,ncol=2,byrow=TRUE))
             }
+            #browser() # 
             coords_start=rbind(coords_start,coords[1,])
             coords_end=rbind(coords_end,coords[length(coords[,1]),])
             # Get reach name
@@ -652,31 +655,42 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
             # Get station name
             station_index=max(station_start[station_start<=xsect_start[j]])
             station_name=c(station_name, strsplit(hec_lines[station_index], ",")[[1]][2] )
-
+            
             # Get left and right bank downstream distances
             left_bank_downstream_dist=c(left_bank_downstream_dist, strsplit(hec_lines[station_index], ",")[[1]][3] )
             right_bank_downstream_dist=c(right_bank_downstream_dist, strsplit(hec_lines[station_index], ",")[[1]][5] )
-
+            
+            # Get elevation associated with left and right banks
+            sei=xsect_end[j]+1 # Index of the '#Sta/Elev' line, just before the station-elevation data
+            # FIXME: Here we are assuming that there are < 300 station elevation lines -- probably true, but be careful!
+            mi = grep('#Mann=',hec_lines[sei:(sei+300)])[1]+sei-1 # Index of the #Mann= line after the station-elevation data 
+            xsect_sta_elev_inds=(sei+1):(mi-1) # Indices of the station - elevation data
+            xsect_station_elevation=split_nchars_numeric(hec_lines[xsect_sta_elev_inds], 8.) # Each number takes up 8 characters
+            left_bank_elev = c(left_bank_elev, xsect_station_elevation[2])
+            right_bank_elev = c(right_bank_elev, xsect_station_elevation[length(xsect_station_elevation)])
         }
        
         output_coords=rbind(output_coords, coords_start)
         output_data=rbind(output_data, 
                           cbind(reach_name, station_name, 
                                 rep('L', length(reach_name)), 
-                                left_bank_downstream_dist) )
+                                left_bank_downstream_dist,
+                                left_bank_elev))
         output_coords=rbind(output_coords, coords_end)
         output_data=rbind(output_data, cbind(reach_name, station_name, 
                                              rep('R', length(reach_name)), 
-                                             right_bank_downstream_dist))
-         
+                                             right_bank_downstream_dist, 
+                                             right_bank_elev))
+        
         #print(cbind(station_name, reach_name))
-
+    
     }
-
+    
         # Coerce to spatial points
         output_pts=SpatialPointsDataFrame(coords=output_coords[,1:2], 
                       data=data.frame(reach_name=output_data[,1], station_name=output_data[,2],
-                                      bank=output_data[,3], downstream_distance=as.numeric(output_data[,4])),
+                                      bank=output_data[,3], downstream_distance=as.numeric(output_data[,4]),
+                                      bank_elev=as.numeric(output_data[,5])),
                       match.ID=FALSE,
                       proj4string=CRS(spatial_proj))
         output_pts
@@ -685,7 +699,8 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
 ##############################################################
 
 make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts, lidar_DEM, 
-                                 vertical_datum_offset=10.5, hec_lines){
+                                 vertical_datum_offset=10.5, hec_lines, 
+                                 limit_weir_elevation_by_channel_bank_elevation){
     #@ Given a storage polygon and a channel polygon (which intersect), make me
     #@ a lateral weir and place it into hec_lines
     #@
