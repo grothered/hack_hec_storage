@@ -267,6 +267,9 @@ if(create_shapefiles_of_existing_rasfile){
     #@ Append to a new hecras file = hec_lines2
     hec_lines2=hec_lines
     end_storage=grep('Connection=', hec_lines2)[1]-2 # We need to insert storage areas here
+    if(is.na(end_storage)){
+        end_storage=grep('Chan Stop Cuts', hec_lines2)[1] -2 
+    }
 
     hec_tmp=hec_lines2[1:end_storage]
     #@ Append storage
@@ -309,6 +312,10 @@ if(create_shapefiles_of_existing_rasfile){
 
     #@ find appropriate index
     end_storage_inds=max(grep("^Conn HTab HWMax=", hec_lines2)) # Last or second last line of storage areas
+    if(!is.finite(end_storage_inds)){
+        end_storage_inds=grep('Chan Stop Cuts', hec_lines2)[1] -2 
+    }
+
     if(hec_lines2[end_storage_inds+1]!=""){
         end_storage_inds=end_storage_inds+2
     }else{
@@ -346,7 +353,6 @@ if(create_shapefiles_of_existing_rasfile){
               }
           }
         }
-
     }
 
     #@
@@ -355,6 +361,9 @@ if(create_shapefiles_of_existing_rasfile){
 
     #@ find appropriate index
     end_storage_inds=max(grep("^Conn HTab HWMax=", hec_lines2)) # Last or second last line of storage areas
+    if(!is.finite(end_storage_inds)){
+        end_storage_inds=grep('Chan Stop Cuts', hec_lines2)[1] -2 
+    }
     if(hec_lines2[end_storage_inds+1]!=""){
         end_storage_inds=end_storage_inds+2
     }else{
