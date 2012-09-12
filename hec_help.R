@@ -81,8 +81,8 @@ output_file='hectest.g05'
 potential_storage_file='store_test/store_test.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-create_shapefiles_of_existing_rasfile=TRUE
-limit_weir_elevation_by_channel_bank_elevation=FALSE
+create_shapefiles_of_existing_rasfile=FALSE
+limit_weir_elevation_by_channel_bank_elevation=TRUE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. 
 vertical_datum_offset=10.5
 logfile='Rlog.log'
 
@@ -116,7 +116,7 @@ chan2=SpatialPolygonsDataFrame(chan2, data=data.frame(DN=seq(1,length(chan2))), 
 
 print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
-browser()
+#browser()
 print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
 print(' ')
 old_storage=get_existing_storage_areas(hecras_channels_file,spatial_proj)

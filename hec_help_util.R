@@ -779,8 +779,8 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     if(length(weir_pts[,1])>99){
         weir_pts=weir_pts[1:99,]
     }
-
-
+    
+    
     #@ Sort the bank stations
     st1=as.character(weir_pts$station_name)
     st2=gsub('\\*', '', st1) # Remove * symbol
@@ -818,7 +818,8 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     print(paste('Connecting ', storage_name, ' to the river', tmp_name, 'at station', tmp_stat, ' near:'))
     print(tmp_coord)
     print('##############################')
-    print(' ')  
+    print(' ') 
+    #browser()
     #@ Get coordinates of the weir points, and downstream distances, and make a
     #@ line along them with 3 times as many points
     weir_line = coordinates(weir_pts)
@@ -835,16 +836,25 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
         return(hec_lines)
     }
     interpolated_length=min(3*ll,80)
-    weir_line=cbind(weir_line, c(0, cumsum(weir_pts$downstream_distance[1:(ll-1)]))) # Append distance
+    weir_line=cbind(weir_line, c(0, cumsum(weir_pts$downstream_distance[1:(ll-1)])), weir_pts$bank_elev) # Append distance and bank elevation
     weir_line_xint = approx(weir_line[,3], weir_line[,1], n=interpolated_length) # Interpolate x's
     weir_line_yint = approx(weir_line[,3], weir_line[,2], n=interpolated_length) # Interpolate y's
+    weir_line_bank_elev_limit=approx(weir_line[,3], weir_line[,4], n=interpolated_length) # Interpolate the bank elevation
     #@ weir_line = downstream_distance, x_coordinate, y_coordinate
-    weir_line=cbind(weir_line_xint$x, weir_line_xint$y, weir_line_yint$y)
+    weir_line=cbind(weir_line_xint$x, weir_line_xint$y, weir_line_yint$y, weir_line_bank_elev_limit$y)
 
     #@ Sample the raster elevations at points on weir_line
+    #browser()
     transect_inds = cbind(rowFromY(lidar_DEM, weir_line[,3]), colFromX(lidar_DEM, weir_line[,2]) )
     weir_elev=lidar_DEM[transect_inds]
     weir_elev=weir_elev + vertical_datum_offset
+    print("############")
+    print(weir_elev)
+    if(limit_weir_elevation_by_channel_bank_elevation){
+        # Make sure that the weir elevation is >= the channel bank elevation
+        weir_elev=pmax(weir_elev, weir_line[,4])
+    }
+    print(weir_elev)
 
     weir_relation=cbind(weir_line[,1], weir_elev)
    
