@@ -75,10 +75,10 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='May_june_2012.g29' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
+hecras_channels_file='cutdown_geo.g02' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
 #hecras_channels_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/model/store_geometry_and_boundaries/2012_07_17/May_june_2012.g29'
 output_file='hectest.g05'
-potential_storage_file='store_test/store_test.shp'
+potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 create_shapefiles_of_existing_rasfile=FALSE
@@ -90,6 +90,7 @@ logfile='Rlog.log'
 # Start sending output to a file
 sink(logfile, split=TRUE)
 
+# Separate filename and basename in the storage_area_file
 storage_file_layername=basename(potential_storage_file) # Might need to edit this
 storage_file_layername=strsplit(storage_file_layername, "\\.")[[1]][1]
 
@@ -102,7 +103,7 @@ library(raster)
 #@ Read in utility functions
 source('hec_help_util.R')
 
-# Read lidar_dem
+#@ Read lidar_dem
 lidar_DEM=raster(lidar_DEM_file)
 
 #@ Extract projection information from lidar
@@ -116,6 +117,7 @@ chan2=SpatialPolygonsDataFrame(chan2, data=data.frame(DN=seq(1,length(chan2))), 
 
 print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
+bridge_lines=grep('Bridge Culvert', hec_lines) # Line numbers associated with the bridges -- we need this much later
 #browser()
 print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
 print(' ')
@@ -143,7 +145,7 @@ if(create_shapefiles_of_existing_rasfile){
 
     #@ Read storage polygon
     new_store=readOGR(potential_storage_file, layer=storage_file_layername)
-    new_store_simp=gBuffer(new_store,width=0.1,byid=T) # Helpful to make geometry valid
+    new_store_simp=gBuffer(new_store,width=0.3,byid=T) # Helpful to make geometry valid, and to make 'just touching' polygons intersect
 
 
     ############################ FORMAT CONVERSION for R
@@ -153,6 +155,46 @@ if(create_shapefiles_of_existing_rasfile){
     for(i in 1:length(new_store_simp)){
         new_store_list[[i]]=SpatialPolygons(new_store_simp@polygons[i], proj4string=CRS(spatial_proj))
     }
+
+    # FIXME: HACK For manila hec-ras work in the following if statement
+    if(TRUE){
+        print('Removing overly large intersections from the storage area files')
+        # Remove intersections that are too large from new_store_list, by merging polygons
+        # Note that intersections will occur at manually defined boundaries,
+        # so doing this will still respect catchment type boundaries
+        new_store_list_less_intersect=list()
+        counter=0
+        for(i in 1:(length(new_store_list)-1)){
+            APPEND=TRUE
+            for(j in (i+1):length(new_store_list)){
+
+                if(gIntersects(new_store_list[[i]], new_store_list[[j]])){
+                    # Check how large the intersection is compared with each polygon
+                    ij_intersect=gIntersection(new_store_list[[i]], new_store_list[[j]])
+                    if(gArea(ij_intersect) > 0.2*min(gArea(new_store_list[[i]]), gArea(new_store_list[[j]]))){
+                        # Intersection is too large -- add polygon i to j, and move on
+                        #browser()
+                        new_store_list[[j]]=gUnion(new_store_list[[i]], new_store_list[[j]])
+                        APPEND=FALSE
+                    }
+                }
+                
+            }
+            # If there is no overly large intersection, keep
+            if(APPEND==TRUE){
+                counter=counter+1
+                new_store_list_less_intersect[[counter]]=new_store_list[[i]]
+            }
+        }
+        # Add in the last polygon in new_store_list    
+        counter=counter+1
+        new_store_list_less_intersect[counter] = new_store_list[[length(new_store_list)]]
+
+        # Update new_store_list
+        new_store_list=new_store_list_less_intersect
+    }# End HACK FOR MANILA WORK
+    #browser()
+
 
     if(!is.null(old_storage)){
         old_store_list=list()
@@ -169,30 +211,25 @@ if(create_shapefiles_of_existing_rasfile){
 
     ########################### MAIN CODE
 
-    #@ Step 1: Compute Stage-Volume relation for every element of new_store_list
-    print("COMPUTING STAGE-VOLUME RELATIONS FOR STORAGE AREAS")
-    new_store_stage_vol_list=list()
-    for(i in 1:length(new_store_list)){
-        my_poly=new_store_list[[i]]
-        new_store_stage_vol_list[[i]] = compute_stage_vol_relation(my_poly,lidar_DEM, vertical_datum_offset)
-    }
-
-    #@ Step 1.5: Identify intersections of storage polygons with each other, or with the channel network
+    #@ Step 1.: Identify intersections of storage polygons with each other, or with the channel network
     #@           While we do this, we make a set of polygons including the unique parts of storage areas
     print("COMPUTING 'NEW STORAGE'-'NEW STORAGE' AREA INTERSECTIONS")
     new_storage_intersections=list()
     unique_new_store_list=list() # This will store the unique part of the storage area
     for(i in 1:length(new_store_list)){
+        #unique_new_store_list[[i]]=gSimplify(new_store_list[[i]], tol=0.1, topologyPreserve=TRUE) # Trick to try to force valid geometries
         unique_new_store_list[[i]]=new_store_list[[i]]
+
         intersections=c()
         for(j in i:length(new_store_list)){
             # Note that we only loop from i, so we avoid double counting connections
             if(i==j) next
 
-            if(gIntersects(new_store_list[[i]], new_store_list[[j]])){
+            if(gIntersects(unique_new_store_list[[i]], new_store_list[[j]])){
                 intersections=c(intersections,j)
                 # Record the non-intersecting area
                 unique_new_store_list[[i]] = gDifference(unique_new_store_list[[i]], new_store_list[[j]])
+                unique_new_store_list[[i]] = gBuffer(unique_new_store_list[[i]], width=0.) # Hack to make valid
             } 
         }
         if(is.null(intersections)){
@@ -238,6 +275,15 @@ if(create_shapefiles_of_existing_rasfile){
             channel_intersections[[i]]=intersections
         }
     } 
+    
+    #@ Step 1.5: Compute Stage-Volume relation for every element of new_store_list
+    print("COMPUTING STAGE-VOLUME RELATIONS FOR STORAGE AREAS")
+    new_store_stage_vol_list=list()
+    for(i in 1:length(new_store_list)){
+        my_poly=new_store_list[[i]]
+        new_store_stage_vol_list[[i]] = compute_stage_vol_relation(my_poly,lidar_DEM, vertical_datum_offset)
+    }
+
 
     #@ Step 2: Make a new hec-ras geometry file, which includes the rivers /
     #@ junctions and storage areas only?  Then we can add new storage area
@@ -401,11 +447,13 @@ if(create_shapefiles_of_existing_rasfile){
             print(c(i,k))
             #@ Iteratively update hec_linestmp by inserting lateral weir
             #@ Use only unique parts of storage areas -- HEC RAS cannot have
-            #@ overlapping lateral structures
+            #@ overlapping lateral structures. Also, don't let lateral
+            #@ structures span over bridges
             hec_linestmp=make_lateral_weir_text(unique_new_store_list[[i]], new_storage_names[[i]],
                                                      chan2_list[[k]], chan_boundary_points, 
                                                      lidar_DEM, vertical_datum_offset, 
-                                                     hec_linestmp, 
+                                                     hec_linestmp,
+                                                     bridge_lines, 
                                                      limit_weir_elevation_by_channel_bank_elevation)
 
         }
