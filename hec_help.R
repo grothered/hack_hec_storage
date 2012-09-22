@@ -1,6 +1,7 @@
 #######################################################################
 #
 #@ R code for semi-automating the creation of storage areas in hec-ras.
+#@ , and for doing some other useful things
 #
 #######################################################################
 #
@@ -26,7 +27,7 @@
 # are inside 3.
 #
 # 
-# The code does the following:
+# The code does the following, depending on how you set it up
 #
 # 1) Creates a polygon shapefile of the channel network (channel shapefile), by
 #    joining boundary points of each cross-section within each river reach in the
@@ -36,8 +37,11 @@
 #
 #    These files are written to hard-coded directories in the local directory
 #
-#    The code will stop here if 'create_shapefiles_of_existing_rasfile=TRUE', which can be useful if you
+#    THE CODE WILL STOP HERE if 'create_shapefiles_of_existing_rasfile=TRUE', which can be useful if you
 #    just want to create a channel polygon
+#
+# 1.5) Use the channel network and xsect cutlines to re-define the 'downstream_distance' values in the hec-ras file.
+#      Only activated if update_downstream_dist=TRUE. THE CODE WILL STOP HERE IF THIS OPTION IS ON.
 #
 # 2) For each individual polygon in the storage shapefile, add it as a storage area in
 #    the hec-ras geometry file, using a stage-volume relation computed from the
@@ -82,10 +86,11 @@ potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 lidar_DSM_file="F:/manila_DSM/Tiles1km_1km/manila_1m_dsm.vrt"
-create_shapefiles_of_existing_rasfile=TRUE
+create_shapefiles_of_existing_rasfile=FALSE
 limit_weir_elevation_by_channel_bank_elevation=FALSE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
 vertical_datum_offset=10.5
 logfile='Rlog.log'
+update_downstream_dist=TRUE # Optionally, use the cutlines and channel centrelines in the hecras file to update the downstream distance parameters. 
 
 
 # Start sending output to a file
@@ -123,8 +128,8 @@ chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_
 print("EXTRACTING CHANNEL CUTLINES")
 chan_cutlines=make_channel_cutlines(hecras_channels_file, spatial_proj)
 
-print("COMPUTING UPDATED DOWNSTREAM DISTANCES")
-centrelines=compute_centrelines_and_new_downstream_distances(hecras_channels_file, chan_cutlines)
+print('COMPUTING CENTRELINES')
+centrelines=compute_centrelines(hecras_channels_file, spatial_proj)
 
 print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
 print(' ')
@@ -157,6 +162,24 @@ if(create_shapefiles_of_existing_rasfile){
 
     sink() # Close the file sink
 }else{
+
+    #@ Read hecras file
+    fin=file(hecras_channels_file, open='r')
+    hec_lines=readLines(fin)
+    close(fin)
+
+    #@ Get Line numbers associated with the bridges -- we need this much later
+    bridge_lines=grep('Bridge Culvert', hec_lines) 
+
+    #@ Adjust the downstream distances based on the spatial data in the hecras file
+    if(update_downstream_dist){
+        print("COMPUTING UPDATED DOWNSTREAM DISTANCES")
+        hec_lines = update_downstream_distances(hec_lines, chan_cutlines, centrelines)
+        #browser()
+        cat(hec_lines,file=output_file,sep="\n") 
+        sink()
+        stop('Will not continue until update_downstream_dist=FALSE')
+    }
 
     #@ Read storage polygon
     new_store=readOGR(potential_storage_file, layer=storage_file_layername)
@@ -305,12 +328,6 @@ if(create_shapefiles_of_existing_rasfile){
     #@ connections / lateral weirs to this. Then, the user can import these only,
     #@ using hecs import functionality. 
      
-    #@ Read file
-    fin=file(hecras_channels_file, open='r')
-    hec_lines=readLines(fin)
-    close(fin)
-    bridge_lines=grep('Bridge Culvert', hec_lines) # Line numbers associated with the bridges -- we need this much later
-
 
     #@
     #@ Step 2.1 - Make text describing the storage areas, that can be inserted into hecras .g01 file
@@ -360,7 +377,7 @@ if(create_shapefiles_of_existing_rasfile){
           storage_connection_text=
               make_storage_connection_text( new_store_list[[i]], new_store_list[[k]], 
                                             new_storage_names[[i]], new_storage_names[[k]],
-                                            lidar_DSM,vertical_datum_offset)    
+                                            lidar_DEM,vertical_datum_offset)    
           if(!is.na(storage_connection_text[1])){
               storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
           }
@@ -410,7 +427,7 @@ if(create_shapefiles_of_existing_rasfile){
               storage_connection_text=
                   make_storage_connection_text( new_store_list[[i]], old_store_list[[k]], 
                                                 new_storage_names[[i]], old_storage$name[k],
-                                                lidar_DSM,vertical_datum_offset)    
+                                                lidar_DEM,vertical_datum_offset)    
               if(!is.na(storage_connection_text[1])){
                   storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
               }

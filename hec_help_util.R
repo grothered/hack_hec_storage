@@ -699,7 +699,7 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
         output_pts
 }
 
-##############################################################
+##############################################################################################################
 make_channel_cutlines<-function(hec_chan_file, spatial_proj){
     #@ Make a spatialLines object containing the cross-sectional cutlines
 
@@ -718,7 +718,6 @@ make_channel_cutlines<-function(hec_chan_file, spatial_proj){
         cutline_2=matrix(cutline,byrow=T,ncol=2)
 
         lines_list[[i]] = Lines(list(Line(cutline_2)), ID=as.character(i))
-        #browser()
     }
 
     #@ Identify associated reaches
@@ -728,32 +727,26 @@ make_channel_cutlines<-function(hec_chan_file, spatial_proj){
         xsect_reaches[i] = reaches[ which.max( cumsum(reaches< cutline_start[i]) ) ]
     }
 
+    xsect_labels=grep('Type RM Length L Ch R = 1', hec_lines) 
+
     xsect_cutlines=SpatialLines(lines_list,proj4string=CRS(spatial_proj))
-    output=SpatialLinesDataFrame(xsect_cutlines, data=data.frame(id_2=1:length(xsect_cutlines), sec_info=hec_lines[cutline_start-2], reach=hec_lines[xsect_reaches]), match.ID=FALSE)
+    output=SpatialLinesDataFrame(xsect_cutlines, data=data.frame(id_2=1:length(xsect_cutlines), 
+                                 sec_info=as.character(hec_lines[xsect_labels]), 
+                                 reach=as.character(hec_lines[xsect_reaches])), match.ID=FALSE)
     return(output)
 }
 
-compute_centrelines_and_new_downstream_distances<-function(hec_chan_file,chan_cutlines){
-    #@ Compute the downstream distances. Assume that left bank = right bank =
-    #@ straight line distance between x-sections at intersection with the channel,
-    #@ while channel distance = distance along the channel.
+###########################################################################################################################################
 
-    # NOTE: We are setting the left bank and right bank distances to be the same.
-    # This should be appropriate if the overbank flows are largely occurring near the channel
-    # However, this will not always be correct, although it will often be true
-    # if the floodplain roughness gets high away from the channel. 
-    # In reality, the left bank / right bank distances should depend on the
-    # flow state -- during serious inundation, they might differ quite a bit. 
-    
+compute_centrelines<-function(hec_chan_file,spatial_proj){
+    #@ Extract channel centrelines from hecras file
+
     #@ Read input file
     fin=file(hec_chan_file, open='r')
     hec_lines=readLines(fin)
     close(fin)
 
-    spatial_proj=proj4string(chan_cutlines)
-
     #@ Identify reaches
-    #browser()
     reaches=grep('River Reach', hec_lines)
     reach_coordinate_end=grep('Rch Text', hec_lines)
 
@@ -765,26 +758,47 @@ compute_centrelines_and_new_downstream_distances<-function(hec_chan_file,chan_cu
     centrelines=list()
     for(i in 1:length(reaches)){
         centre_txt=hec_lines[(reaches[i]+2):(reach_coordinate_end[i]-1)]
-        #browser()
         centre_coords=matrix(split_nchars_numeric(centre_txt, 16), ncol=2,byrow=T)    
 
         centrelines[[i]] = Lines(list(Line(centre_coords)), ID=hec_lines[reaches[i]])
     }
     
     reach_lines=SpatialLines(centrelines,proj4string=CRS(spatial_proj))
-    reach_lines=SpatialLinesDataFrame(reach_lines, data=data.frame(id_2=1:length(reach_lines), reach=hec_lines[reaches]), match.ID=FALSE)
+    reach_lines=SpatialLinesDataFrame(reach_lines, data=data.frame(id_2=1:length(reach_lines), reach=as.character(hec_lines[reaches])), match.ID=FALSE)
+    return(reach_lines) 
+}
+
+#########################################################################################################################################
+
+update_downstream_distances<-function(hec_lines, chan_cutlines, reach_lines){
+    #@ Function to compute the 'downstream distances' of the xsections on each
+    #@ reach, using the cutline and reach centreline information in hec_lines.
+    
+    #@ Assume that left bank = right bank = straight line 
+    #@ distance between x-sections at intersection with the channel,
+    #@ while channel distance = distance along the channel.
+
+    # NOTE: We are setting the left bank and right bank distances to be the same.
+    # This should be appropriate if the overbank flows are largely occurring near the channel
+    # However, this will not always be correct, although it will often be true
+    # if the floodplain roughness gets high away from the channel. 
+    # In reality, the left bank / right bank distances should depend on the
+    # flow state -- during serious inundation, they might differ quite a bit. 
+    
+    spatial_proj=proj4string(chan_cutlines)
 
     # Now, for every reach_line, find its intersection with the centreline.
     # This should be just one point: if more than that, we need to do some more
     # work
-    downstream_distances_straight=list()
-    downstream_distances_chan=list()
-    upstream_distances_chan=list()
+    #downstream_distances_straight=list()
+    #downstream_distances_chan=list()
+
     for(i in 1:length(reach_lines)){
         # Get cross-sections located on this reach
-        local_xsects=which(chan_cutlines@data$reach==reach_lines@data$reach[i])
-        local_xsects = SpatialLines(chan_cutlines@lines[local_xsects], proj4string=CRS(spatial_proj))
-       
+        local_xsects_inds=which(chan_cutlines@data$reach==reach_lines@data$reach[i])
+        local_xsects = SpatialLines(chan_cutlines@lines[local_xsects_inds], proj4string=CRS(spatial_proj))
+        local_xsects_df = SpatialLinesDataFrame(local_xsects, data=chan_cutlines@data[local_xsects_inds,])#, proj4string=CRS(spatial_proj))
+      
         # Get the reach line as a SpatialLines 
         local_centreline=SpatialLines(reach_lines@lines[i], proj4string=CRS(spatial_proj))
 
@@ -793,7 +807,7 @@ compute_centrelines_and_new_downstream_distances<-function(hec_chan_file,chan_cu
         # Loop over the xsections, and find their upstream_distance with the
         # channel, and intersection_point
         intersect_pt=c()
-        upstream_distances_chan[[i]]=rep(NA, length(local_xsects))
+        upstream_distances_chan=rep(NA, length(local_xsects))
         for(j in 1:length(local_xsects)){
             cutpointz=gIntersection(local_xsects[j], local_centreline)
 
@@ -808,30 +822,47 @@ compute_centrelines_and_new_downstream_distances<-function(hec_chan_file,chan_cu
                 }
                 # Select the point with the largest upstream distance
                 keep_ind=which.max(usdists)
-                #browser()
                 cutpointz=cutpointz[keep_ind]
-                upstream_distances_chan[[i]][j]= usdists[keep_ind]
-
+                upstream_distances_chan[j]= usdists[keep_ind]
+                
             }else if(length(cutpointz)==0){
                 print('no cutpoint')
                 browser()
                 stop('no cutpoint')
             }else{
                 tmp = usdistfun(coordinates(cutpointz), coordinates(local_centreline)[[1]][[1]])
-                upstream_distances_chan[[i]][j]=tmp[1] 
+                upstream_distances_chan[j]=tmp[1] 
             }
             intersect_pt=rbind(intersect_pt, coordinates(cutpointz))
         }
+        
+        downstream_distances_chan=c(-diff(upstream_distances_chan), 0.)
+        downstream_distances_straight=c((diff(intersect_pt[,1])**2 + diff(intersect_pt[,2])**2)**0.5, 0)
+      
+        # Now correct the hec_lines file 
+        reach_index=grep(as.character(reach_lines@data$reach[i]), hec_lines)
+        l = length(hec_lines)
+        for(j in 1:length(local_xsects)){
+            old_xsect_txt=as.character(local_xsects_df@data[j,]$sec_info) # Text string corresponding to the cross_section
+            index_in_hecfile=grep(old_xsect_txt,hec_lines[reach_index:l], fixed=TRUE)[1] + reach_index-1 # Ensure that it occurs within the reach xsections
 
-        downstream_distances_chan[[i]]=c(-diff(upstream_distances_chan[[i]]), 0.)
-        downstream_distances_straight[[i]]=c((diff(intersect_pt[,1])**2 + diff(intersect_pt[,2])**2)**0.5, 0)
-        #browser()
+            text_split=strsplit(old_xsect_txt,",")[[1]]
+
+            # Change the downstream distances
+            if(downstream_distances_chan[j]!=0.){
+                text_split[c(3,5)]=as.character(round(downstream_distances_straight[j],2))
+                chan_dist=max(downstream_distances_straight[j], downstream_distances_chan[j])
+                text_split[4] = as.character(round(chan_dist,2))
+                
+
+                text_combine=paste(text_split,collapse=",")
+                hec_lines[index_in_hecfile]=text_combine
+            }
+                        
+        }
     }
-    browser()
-    print(' ')
-    print(' ')
-    print(' ')
-    return(reach_lines) 
+
+    return(hec_lines)
 }
 
 ##############################################################
@@ -929,12 +960,10 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     upstream_bridges=which(bridge_lines<min(weir_lines))
     downstream_bridges=which(bridge_lines> max(weir_lines))
     if(length(upstream_bridges)+length(downstream_bridges) < length(bridge_lines)){
-        #browser()
         # Check that the weir points are sorted (they should be)
         if(min(diff(weir_lines))<0){
             stop('ERROR: Found unsorted weir_pts which apparently intersect a bridge. Need to code this case')
         }
-        #browser()
         # Categorise weir_pts into groups without internal bridges
         weir_cut = cut(weir_lines, bridge_lines) 
         weir_sublen= sort(table(weir_cut), decreasing=TRUE)
@@ -1107,18 +1136,12 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
         my_upper_ind=ll
     }
   
-    #print(paste('my_lower_ind', my_lower_ind, 'my_upper_ind', my_upper_ind)) 
-    
+    #browser() 
     #@ Find the line at the start of the upstream station
     line_pattern=paste('Type RM Length L Ch R = 1 ,',weir_pts$station_name[1],sep="")
     #@ NOTE: Match can contain a * -- need to use 'fixed=TRUE' to get this
     upstream_station_ind=grep(line_pattern, hec_lines[my_lower_ind:my_upper_ind],fixed=TRUE) + my_lower_ind-1
 
-    #print(hec_lines[my_lower_ind:my_upper_ind][1:300])
-
-    #print(paste('line_pattern:', line_pattern, 'upstream_station_ind', upstream_station_ind)) 
-    #stop()
-    
     #@ Find next blank line (search next 300 lines). Identified because it has
     #@ no letters or numbers
     upper_search_ind=min(upstream_station_ind+300, ll)
@@ -1159,7 +1182,6 @@ usdistfun<-function(point_coords, line_coords, roundoff_tol=1.0e-03){
     us_dist=cumsum( (diff(line_coords_rev[,1])**2 + diff(line_coords_rev[,2])**2)**0.5)
     us_dist=c(0, us_dist)
     us_dist=rev(us_dist) # Indices follow those in line_coords
-    #browser()
 
     output=NA
     connecting_segment=NA
@@ -1168,7 +1190,6 @@ usdistfun<-function(point_coords, line_coords, roundoff_tol=1.0e-03){
         # Do this by computing the change in x and y for 1 unit of movement
         # along the segment, and then taking a segment to x0,y0, computing
         # the same, and comparing
-        #browser()
         ds = us_dist[k]-us_dist[k+1]  # This will be positive   
         dy=(line_coords[k+1,2]-line_coords[k,2])/ds # delta y
         dx=(line_coords[k+1,1]-line_coords[k,1])/ds # delta y
