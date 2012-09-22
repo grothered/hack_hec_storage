@@ -75,14 +75,15 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='cutdown_geo.g02' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
+hecras_channels_file='channels_only.g15' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
 #hecras_channels_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/model/store_geometry_and_boundaries/2012_07_17/May_june_2012.g29'
 output_file='hectest.g05'
 potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
-create_shapefiles_of_existing_rasfile=FALSE
-limit_weir_elevation_by_channel_bank_elevation=TRUE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. 
+lidar_DSM_file="F:/manila_DSM/Tiles1km_1km/manila_1m_dsm.vrt"
+create_shapefiles_of_existing_rasfile=TRUE
+limit_weir_elevation_by_channel_bank_elevation=FALSE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
 vertical_datum_offset=10.5
 logfile='Rlog.log'
 
@@ -105,6 +106,7 @@ source('hec_help_util.R')
 
 #@ Read lidar_dem
 lidar_DEM=raster(lidar_DEM_file)
+lidar_DSM=raster(lidar_DSM_file)
 
 #@ Extract projection information from lidar
 spatial_proj=lidar_DEM@crs@projargs
@@ -117,8 +119,13 @@ chan2=SpatialPolygonsDataFrame(chan2, data=data.frame(DN=seq(1,length(chan2))), 
 
 print("EXTRACTING CHANNEL XSECT BOUNDARY POINTS")
 chan_boundary_points=make_channel_boundary_points(hecras_channels_file, spatial_proj)
-bridge_lines=grep('Bridge Culvert', hec_lines) # Line numbers associated with the bridges -- we need this much later
-#browser()
+
+print("EXTRACTING CHANNEL CUTLINES")
+chan_cutlines=make_channel_cutlines(hecras_channels_file, spatial_proj)
+
+print("COMPUTING UPDATED DOWNSTREAM DISTANCES")
+centrelines=compute_centrelines_and_new_downstream_distances(hecras_channels_file, chan_cutlines)
+
 print('EXTRACTING EXISTING STORAGE AREAS FROM HECRAS FILE')
 print(' ')
 old_storage=get_existing_storage_areas(hecras_channels_file,spatial_proj)
@@ -130,17 +137,25 @@ if(create_shapefiles_of_existing_rasfile){
     #@ Write channel boundary points to a shapefile for viewing in GIS
     try(writeOGR(chan_boundary_points,dsn='chan_points',layer='chan_points',driver='ESRI Shapefile',overwrite=TRUE))
 
+    #@ Write channel cutlines to a shapefile
+    try(writeOGR(chan_cutlines,dsn='chan_cutlines',layer='chan_cutlines',driver='ESRI Shapefile',overwrite=TRUE))
+    
+    #@ Write channel centrelines to a shapefile
+    try(writeOGR(centrelines,dsn='chan_centrelines',layer='centrelines',driver='ESRI Shapefile',overwrite=TRUE))
+
     #@ Write existing storage areas to shapefile
     if(!is.null(old_storage)){
         try(writeOGR(old_storage, dsn='existing_storage',layer='existing_storage',driver='ESRI Shapefile',overwrite=TRUE))
     } 
     print(' ')
-    print('Tried to create polygons from hec-ras files creation') 
+    print('Hopefully I created shapefiles depicting the hec-ras channels') 
     print('I will not proceed further while create_shapefiles_of_existing_rasfile=TRUE.')
-    print('If you got a "Layer creation failed" error, it probably means')
-    print(' that one of the shapefiles is already open,')
+    print('If you got a \"Layer creation failed\" error, it probably means')
+    print(' that one of the shapefiles is already open, and you are using windows,')
     print(' in which case R may not be allowed to update it')
+    print(' In that case, close the shapefile, and try again')
 
+    sink() # Close the file sink
 }else{
 
     #@ Read storage polygon
@@ -294,6 +309,7 @@ if(create_shapefiles_of_existing_rasfile){
     fin=file(hecras_channels_file, open='r')
     hec_lines=readLines(fin)
     close(fin)
+    bridge_lines=grep('Bridge Culvert', hec_lines) # Line numbers associated with the bridges -- we need this much later
 
 
     #@
@@ -344,7 +360,7 @@ if(create_shapefiles_of_existing_rasfile){
           storage_connection_text=
               make_storage_connection_text( new_store_list[[i]], new_store_list[[k]], 
                                             new_storage_names[[i]], new_storage_names[[k]],
-                                            lidar_DEM,vertical_datum_offset)    
+                                            lidar_DSM,vertical_datum_offset)    
           if(!is.na(storage_connection_text[1])){
               storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
           }
@@ -394,7 +410,7 @@ if(create_shapefiles_of_existing_rasfile){
               storage_connection_text=
                   make_storage_connection_text( new_store_list[[i]], old_store_list[[k]], 
                                                 new_storage_names[[i]], old_storage$name[k],
-                                                lidar_DEM,vertical_datum_offset)    
+                                                lidar_DSM,vertical_datum_offset)    
               if(!is.na(storage_connection_text[1])){
                   storage_connection_text_all=c(storage_connection_text_all, storage_connection_text, " ")
               }

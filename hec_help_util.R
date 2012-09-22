@@ -700,6 +700,141 @@ make_channel_boundary_points<-function(hec_chan_file,spatial_proj){
 }
 
 ##############################################################
+make_channel_cutlines<-function(hec_chan_file, spatial_proj){
+    #@ Make a spatialLines object containing the cross-sectional cutlines
+
+    #@ Read input file
+    fin=file(hec_chan_file, open='r')
+    hec_lines=readLines(fin)
+    close(fin)
+
+    #@ Identify cutlines
+    cutline_start=grep('XS GIS Cut Line', hec_lines)+1
+    cutline_end=grep('#Sta', hec_lines)-2
+
+    lines_list=list()
+    for(i in 1:length(cutline_start)){
+        cutline=split_nchars_numeric(hec_lines[cutline_start[i]:cutline_end[i]], 16)
+        cutline_2=matrix(cutline,byrow=T,ncol=2)
+
+        lines_list[[i]] = Lines(list(Line(cutline_2)), ID=as.character(i))
+        #browser()
+    }
+
+    #@ Identify associated reaches
+    reaches=grep('River Reach', hec_lines)
+    xsect_reaches=cutline_start*NA
+    for(i in 1:length(xsect_reaches)){
+        xsect_reaches[i] = reaches[ which.max( cumsum(reaches< cutline_start[i]) ) ]
+    }
+
+    xsect_cutlines=SpatialLines(lines_list,proj4string=CRS(spatial_proj))
+    output=SpatialLinesDataFrame(xsect_cutlines, data=data.frame(id_2=1:length(xsect_cutlines), sec_info=hec_lines[cutline_start-2], reach=hec_lines[xsect_reaches]), match.ID=FALSE)
+    return(output)
+}
+
+compute_centrelines_and_new_downstream_distances<-function(hec_chan_file,chan_cutlines){
+    #@ Compute the downstream distances. Assume that left bank = right bank =
+    #@ straight line distance between x-sections at intersection with the channel,
+    #@ while channel distance = distance along the channel.
+
+    # NOTE: We are setting the left bank and right bank distances to be the same.
+    # This should be appropriate if the overbank flows are largely occurring near the channel
+    # However, this will not always be correct, although it will often be true
+    # if the floodplain roughness gets high away from the channel. 
+    # In reality, the left bank / right bank distances should depend on the
+    # flow state -- during serious inundation, they might differ quite a bit. 
+    
+    #@ Read input file
+    fin=file(hec_chan_file, open='r')
+    hec_lines=readLines(fin)
+    close(fin)
+
+    spatial_proj=proj4string(chan_cutlines)
+
+    #@ Identify reaches
+    #browser()
+    reaches=grep('River Reach', hec_lines)
+    reach_coordinate_end=grep('Rch Text', hec_lines)
+
+    if(length(reaches)!=length(reach_coordinate_end)){
+        stop("ERROR in compute_new_downstream_distances: The start and end points of the reach coordinates are not matching up")
+    }
+
+    #@ Now extract the centreline coordiantes
+    centrelines=list()
+    for(i in 1:length(reaches)){
+        centre_txt=hec_lines[(reaches[i]+2):(reach_coordinate_end[i]-1)]
+        #browser()
+        centre_coords=matrix(split_nchars_numeric(centre_txt, 16), ncol=2,byrow=T)    
+
+        centrelines[[i]] = Lines(list(Line(centre_coords)), ID=hec_lines[reaches[i]])
+    }
+    
+    reach_lines=SpatialLines(centrelines,proj4string=CRS(spatial_proj))
+    reach_lines=SpatialLinesDataFrame(reach_lines, data=data.frame(id_2=1:length(reach_lines), reach=hec_lines[reaches]), match.ID=FALSE)
+
+    # Now, for every reach_line, find its intersection with the centreline.
+    # This should be just one point: if more than that, we need to do some more
+    # work
+    downstream_distances_straight=list()
+    downstream_distances_chan=list()
+    upstream_distances_chan=list()
+    for(i in 1:length(reach_lines)){
+        # Get cross-sections located on this reach
+        local_xsects=which(chan_cutlines@data$reach==reach_lines@data$reach[i])
+        local_xsects = SpatialLines(chan_cutlines@lines[local_xsects], proj4string=CRS(spatial_proj))
+       
+        # Get the reach line as a SpatialLines 
+        local_centreline=SpatialLines(reach_lines@lines[i], proj4string=CRS(spatial_proj))
+
+        #cutpoints=gIntersection(local_centreline,local_xsects,byid=T)
+
+        # Loop over the xsections, and find their upstream_distance with the
+        # channel, and intersection_point
+        intersect_pt=c()
+        upstream_distances_chan[[i]]=rep(NA, length(local_xsects))
+        for(j in 1:length(local_xsects)){
+            cutpointz=gIntersection(local_xsects[j], local_centreline)
+
+            # Treat the case of multiple intersections by choosing the one that
+            # is most upstream
+            if(length(cutpointz)>1){
+                # Compute upstream distances of points along channel
+                usdists=rep(NA,length(cutpointz))            
+                for(k in 1:length(usdists)){
+                    tmp = usdistfun(coordinates(cutpointz[k]), coordinates(local_centreline)[[1]][[1]])
+                    usdists[k]=tmp[1]
+                }
+                # Select the point with the largest upstream distance
+                keep_ind=which.max(usdists)
+                #browser()
+                cutpointz=cutpointz[keep_ind]
+                upstream_distances_chan[[i]][j]= usdists[keep_ind]
+
+            }else if(length(cutpointz)==0){
+                print('no cutpoint')
+                browser()
+                stop('no cutpoint')
+            }else{
+                tmp = usdistfun(coordinates(cutpointz), coordinates(local_centreline)[[1]][[1]])
+                upstream_distances_chan[[i]][j]=tmp[1] 
+            }
+            intersect_pt=rbind(intersect_pt, coordinates(cutpointz))
+        }
+
+        downstream_distances_chan[[i]]=c(-diff(upstream_distances_chan[[i]]), 0.)
+        downstream_distances_straight[[i]]=c((diff(intersect_pt[,1])**2 + diff(intersect_pt[,2])**2)**0.5, 0)
+        #browser()
+    }
+    browser()
+    print(' ')
+    print(' ')
+    print(' ')
+    return(reach_lines) 
+}
+
+##############################################################
 
 make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts, lidar_DEM, 
                                  vertical_datum_offset=10.5, hec_lines, bridge_lines,
@@ -993,3 +1128,86 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
 
     hec_linestmp
 }
+
+
+################################################################################
+
+usdistfun<-function(point_coords, line_coords, roundoff_tol=1.0e-03){
+    # Compute the upstream distance of point='point_coords'=c(x0,y0), along a line
+    # defined by 'line_coords' = matrix with 2 columns
+    #
+    # Also, compute the index of the segment in line_coords that point_coords
+    # intersects with. This was most convenient to calculate here, even though
+    # its a bit out of place 
+    #
+    # point_coords should lie on line_coords to within a small tolerence. This
+    # tolerance is is related to roundoff_tol in a complex fashion -- read the
+    # source if you need to know!
+    #
+    # NOTE: line_coords is assumed to be ordered from upstream to downstream.
+    # Upstream distance is measured from the most downstream point in
+    # line_coords
+     
+    x0=point_coords[1]
+    y0=point_coords[2]
+
+    if(length(line_coords[,1])<2) stop('ERROR: line_coords has < 2 points')
+    if(length(point_coords)!=2) stop('ERROR: point_coords does not describe a single point')
+
+    # Compute upstream distance along line
+    line_coords_rev=line_coords[length(line_coords[,1]):1,]
+    us_dist=cumsum( (diff(line_coords_rev[,1])**2 + diff(line_coords_rev[,2])**2)**0.5)
+    us_dist=c(0, us_dist)
+    us_dist=rev(us_dist) # Indices follow those in line_coords
+    #browser()
+
+    output=NA
+    connecting_segment=NA
+    for(k in 1:(length(us_dist)-1)){
+        # Check if x,y lies on this segment of us_dist
+        # Do this by computing the change in x and y for 1 unit of movement
+        # along the segment, and then taking a segment to x0,y0, computing
+        # the same, and comparing
+        #browser()
+        ds = us_dist[k]-us_dist[k+1]  # This will be positive   
+        dy=(line_coords[k+1,2]-line_coords[k,2])/ds # delta y
+        dx=(line_coords[k+1,1]-line_coords[k,1])/ds # delta y
+
+        ds2 = (( line_coords[k+1,2]-y0)**2 + (line_coords[k+1,1]-x0)**2)**0.5
+
+        # Quick check to see if we are on possibly on this segment
+        if( ds2>ds+roundoff_tol){
+            # x0, y0 is not on the segment
+            next
+        }
+        # Allow for degenerate case -- avoid division by ds2
+        if(ds2<roundoff_tol){
+            output=us_dist[k+1]
+            connecting_segment=k
+            break
+        }
+
+        dy2 = (line_coords[k+1,2]-y0)/ds2
+        dx2 = (line_coords[k+1,1]-x0)/ds2
+
+        # Test for equity, allowing for floating point error if ds2 is very small
+        if((abs(dy2-dy)<roundoff_tol) && (abs(dx2-dx)<roundoff_tol)){
+            # FIXME: roundoff_tol here should be different to the one used previously.
+            # Might matter in unusual cases
+            output=us_dist[k+1] + ds2
+            connecting_segment=k
+            break
+        }
+    }
+    
+
+    if(is.na(output) | is.na(connecting_segment)){
+        print('output / connecting_segment is NA in usdistfun ( useful_functions.R). Going into browser()')
+        browser()
+        print('XXX')
+        print('XXX')
+        print('XXX')
+    }
+    return(c(output, connecting_segment))
+}
+
