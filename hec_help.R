@@ -42,6 +42,9 @@
 #
 # 1.5) Use the channel network and xsect cutlines to re-define the 'downstream_distance' values in the hec-ras file.
 #      Only activated if update_downstream_dist=TRUE. THE CODE WILL STOP HERE IF THIS OPTION IS ON.
+#      It computes the channel downstream distance 'along the channel', and the overbank distances are set equal to 
+#      the 'straight line distance' between the channel intersection points of consecutive cross-sections
+#      WARNING: Make sure you check the distances where the river does funny things [e.g. overlaps a cross-section in multiple places]
 #
 # 2) For each individual polygon in the storage shapefile, add it as a storage area in
 #    the hec-ras geometry file, using a stage-volume relation computed from the
@@ -86,11 +89,11 @@ potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 lidar_DSM_file="F:/manila_DSM/Tiles1km_1km/manila_1m_dsm.vrt"
-create_shapefiles_of_existing_rasfile=FALSE
+create_shapefiles_of_existing_rasfile=FALSE # IF TRUE, then make shapefiles of the channel geometry, and stop
 limit_weir_elevation_by_channel_bank_elevation=FALSE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
 vertical_datum_offset=10.5
 logfile='Rlog.log'
-update_downstream_dist=TRUE # Optionally, use the cutlines and channel centrelines in the hecras file to update the downstream distance parameters. 
+update_downstream_dist=FALSE # If true, then use the cutlines and channel centrelines in the hecras file to update the downstream distance parameters, then stop 
 
 
 # Start sending output to a file
