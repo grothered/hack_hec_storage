@@ -82,18 +82,29 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='channels_only.g15' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
+hecras_channels_file='May_june_2012_c.g03' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
 #hecras_channels_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/model/store_geometry_and_boundaries/2012_07_17/May_june_2012.g29'
 output_file='hectest.g05'
-potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
+
+#potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
+potential_storage_file='C:/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/hec_helper/new_storeb/newstore.shp'
+
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 lidar_DSM_file="F:/manila_DSM/Tiles1km_1km/manila_1m_dsm.vrt"
-create_shapefiles_of_existing_rasfile=FALSE # IF TRUE, then make shapefiles of the channel geometry, and stop
-limit_weir_elevation_by_channel_bank_elevation=FALSE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
 vertical_datum_offset=10.5
+
+
+limit_weir_elevation_by_channel_bank_elevation=FALSE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
+lower_limit_on_lateral_weir_elevations=-Inf # The weir elevation in hec-ras will always be >= lower_limit_on_lateral_weir_elevation. Set to -Inf to have no limit
 logfile='Rlog.log'
+
+#@ Options to do different things
+create_shapefiles_of_existing_rasfile=TRUE # IF TRUE, then make shapefiles of the channel geometry, and stop
 update_downstream_dist=FALSE # If true, then use the cutlines and channel centrelines in the hecras file to update the downstream distance parameters, then stop 
+
+
+###################################################################################################
 
 
 # Start sending output to a file
@@ -229,13 +240,17 @@ if(create_shapefiles_of_existing_rasfile){
         }
         # Add in the last polygon in new_store_list    
         counter=counter+1
-        new_store_list_less_intersect[counter] = new_store_list[[length(new_store_list)]]
+        new_store_list_less_intersect[[counter]] = new_store_list[[length(new_store_list)]]
 
         # Update new_store_list
         new_store_list=new_store_list_less_intersect
     }# End HACK FOR MANILA WORK
     #browser()
 
+    # Buffer
+    for(i in 1:length(new_store_list)){
+        new_store_list[[i]] = gBuffer(new_store_list[[i]], width=1.0)
+    }
 
     if(!is.null(old_storage)){
         old_store_list=list()
@@ -268,9 +283,11 @@ if(create_shapefiles_of_existing_rasfile){
 
             if(gIntersects(unique_new_store_list[[i]], new_store_list[[j]])){
                 intersections=c(intersections,j)
-                # Record the non-intersecting area
-                unique_new_store_list[[i]] = gDifference(unique_new_store_list[[i]], new_store_list[[j]])
-                unique_new_store_list[[i]] = gBuffer(unique_new_store_list[[i]], width=0.) # Hack to make valid
+                if(FALSE){
+                    # Record the non-intersecting area -- can be prone to problems
+                    unique_new_store_list[[i]] = gDifference(unique_new_store_list[[i]], new_store_list[[j]])
+                    unique_new_store_list[[i]] = gBuffer(unique_new_store_list[[i]], width=0.) # Hack to make valid
+                }
             } 
         }
         if(is.null(intersections)){
@@ -365,7 +382,8 @@ if(create_shapefiles_of_existing_rasfile){
     #@ Update the new hecras file
     hec_lines2=hec_tmp
 
-
+    #save(hec_lines2, file='tmp_new_storage_geo.Rdata')
+    save.image(file='workspace_keep_new_storage_geo.Rdata')
     #@
     #@ Step 2.2 -- Loop over all overlapping storage areas, and make a storage area connection
     #@
@@ -414,6 +432,8 @@ if(create_shapefiles_of_existing_rasfile){
 
     hec_lines2=hec_linestmp
 
+    #save(hec_lines2, file='tmp_storage_con_A.Rdata')
+    save.image('workspace_keep_storage_con_A.Rdata')
 
     #@
     #@ Step 2.3 -- Loop over all overlapping storage areas, and make a storage area connection
@@ -463,6 +483,8 @@ if(create_shapefiles_of_existing_rasfile){
     hec_lines2=hec_linestmp
 
 
+    #save(hec_lines2, file='tmp_storage_con_B.Rdata')
+    save.image('workspace_keep_storage_con_B.Rdata')
 
     #@
     #@
@@ -477,20 +499,70 @@ if(create_shapefiles_of_existing_rasfile){
     for(i in 1:length(channel_intersections)){
 
         if(is.na(channel_intersections[[i]][1])) next
+            
+        #@ First:
+        unique_new_store_list[[i]]=gBuffer(unique_new_store_list[[i]],width=2.) # Buffer helps to avoid skipping the odd point
 
         for(j in 1:length(channel_intersections[[i]])){
             k=channel_intersections[[i]][j]
             print(c(i,k))
+            hec_linestmp_old=hec_linestmp
+
             #@ Iteratively update hec_linestmp by inserting lateral weir
             #@ Use only unique parts of storage areas -- HEC RAS cannot have
             #@ overlapping lateral structures. Also, don't let lateral
             #@ structures span over bridges
+
+            #@ TRICKS TO MAKE THINGS WELL BEHAVED.
+            #@ Make sure that the chan_boundary_points we search through actually belong to this channel
+            #@ , as sometimes we can get points intersecting multiple channels
+            #@ 
+            kk=which(!is.na(over(chan_boundary_points, chan2_list[[k]]))) # Indices of bank points within channel poly
+            reachlist=sort( table( as.character(chan_boundary_points@data[kk,1])),decreasing=TRUE) # Names of reaches
+            reachname=names(reachlist)[1] # Most commonly occurring name -- this will be the reach name
+            chan_tmp_points=which(as.character(chan_boundary_points@data[kk,1])==reachname)
+            chan_tmp_points=chan_boundary_points[kk[chan_tmp_points],]
+
+            #@ We cannot have a lateral structure between the first and second points in a reach.
+            #@ Also, we tend to have problems if we put it near the most downstream point.
+            #@ So let's remove the first points from chan_tmp_points.
+            remove=c(1, min(which(chan_tmp_points$bank=='R')))
+            chan_tmp_points=chan_tmp_points[-remove,]
+            remove=c( max(which(chan_tmp_points$bank=='L')), length(chan_tmp_points[,1]))
+            chan_tmp_points=chan_tmp_points[-remove,]
+
+            #@ We must ensure that the elevations along the lateral structure
+            #@ are not below the min elevation in the storage area
+            min_structure_elev=min(new_store_stage_vol_list[[i]][,1])
+            print(c('#3322311# ', min_structure_elev))
+
+
+            #@ 
             hec_linestmp=make_lateral_weir_text(unique_new_store_list[[i]], new_storage_names[[i]],
-                                                     chan2_list[[k]], chan_boundary_points, 
+                                                     chan2_list[[k]], chan_tmp_points, 
                                                      lidar_DEM, vertical_datum_offset, 
                                                      hec_linestmp,
                                                      bridge_lines, 
-                                                     limit_weir_elevation_by_channel_bank_elevation)
+                                                     limit_weir_elevation_by_channel_bank_elevation,
+                                                     min_structure_elev, lower_limit_on_lateral_weir_elevations)
+
+            # Trick to join up storage areas which are 'just' missing the channel point.
+            l1=length(hec_linestmp_old)
+            l2=length(hec_linestmp)
+            l3=min(l1,l2)
+            if(all(hec_linestmp_old[l3]==hec_linestmp[l3])& (l2==l1)){
+                #browser()
+                unique_new_store_list[[i]]=gBuffer(unique_new_store_list[[i]],width=20.) # Buffer by 20.
+                hec_linestmp=make_lateral_weir_text(unique_new_store_list[[i]], new_storage_names[[i]],
+                                                         chan2_list[[k]], chan_tmp_points, 
+                                                         lidar_DEM, vertical_datum_offset, 
+                                                         hec_linestmp,
+                                                         bridge_lines, 
+                                                         limit_weir_elevation_by_channel_bank_elevation,
+                                                         min_structure_elev)
+
+
+            }
 
         }
 

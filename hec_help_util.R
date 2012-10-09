@@ -249,7 +249,7 @@ compute_stage_vol_relation<-function(my_poly,lidar_DEM, vertical_datum_offset, u
    
     #@ Number of points on the stage - volume curve. 
     #@ Ensure 5<= number of points <= 60. Ideally, only give a new point every 0.33 m 
-    num_stagevol_points=min(60, max(5, (max(elev_pts[[1]])-min(elev_pts[[1]]) )*3 ) ) 
+    num_stagevol_points=min(30, max(5, (max(elev_pts[[1]])-min(elev_pts[[1]]) )*3 ) ) 
 
     elev_hist=hist(elev_pts[[1]],n=num_stagevol_points)
 
@@ -321,6 +321,9 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
     #@    These string manipulations can be pretty hacky
     #@
 
+    # Try to filter storage area coordinates -- we sometimes have way too many points
+    storage_area=gSimplify(storage_area,tol=10., topologyPreserve=TRUE)
+
     #@ Compute coordinates inside poly
     storage_area_central_coords=coordinates(storage_area)
 
@@ -331,6 +334,26 @@ make_storage_area_text<-function(storage_area, elev_vol,name){
     l=length(storage_area_bounding_coords[,1])
     storage_area_bounding_coords=storage_area_bounding_coords[-l,]
 
+    ## TRY TO FILTER storage_area_bounding_coords as stored in hec-ras
+    ## Because it can be too large often, perhaps due to the details of the spatial processing
+    ## Hopefully not needed, as we simplify above
+    if(length(storage_area_bounding_coords[,1])>50.){
+        print('More than 50 points still in storage area')
+        usdist=c(0, cumsum(sqrt(diff(storage_area_bounding_coords[,1])**2 + diff(storage_area_bounding_coords[,2])**2)))
+        x_fun=approxfun(usdist,storage_area_bounding_coords[,1])
+        y_fun=approxfun(usdist,storage_area_bounding_coords[,2])
+
+        lmax=max(usdist)
+        # How many coordinates can we accept? Max of 500. Min 10m spacing. 
+        num_coords=min(499, floor(lmax/10.), length(storage_area_bounding_coords[,1]))
+        dist_seq=seq(0,lmax,len=num_coords)
+        x_new=x_fun(dist_seq)
+        y_new=y_fun(dist_seq)
+
+        storage_area_bounding_coords=cbind(x_new,y_new)
+    }
+
+    #browser()
     #@ Start producing output text
 
     output_text=c() # Initialise output_text
@@ -445,6 +468,15 @@ make_storage_connection_text<-function(store1, store2, name1, name2, lidar_DEM, 
     overlap_max=A3/min(A1,A2)
     overlap_error_threshold=0.2
     if(overlap_max>overlap_error_threshold){
+        if(A1>A2){
+            plot(store1,axes=T,asp=1)
+            plot(store2,border='red',add=T)
+            title('Storage areas which overlap too much')
+        }else{
+            plot(store2,axes=T,asp=1)
+            plot(store1,border='red',add=T)
+            title('Storage areas which overlap too much')
+        }
         print('')
         print('#################################################')
         stop(paste('ERROR: Storage areas', name1, 'and', name2, 'overlap by > ', 
@@ -869,7 +901,8 @@ update_downstream_distances<-function(hec_lines, chan_cutlines, reach_lines){
 
 make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts, lidar_DEM, 
                                  vertical_datum_offset=10.5, hec_lines, bridge_lines,
-                                 limit_weir_elevation_by_channel_bank_elevation){
+                                 limit_weir_elevation_by_channel_bank_elevation,
+                                 min_structure_elev, lower_limit_on_lateral_weir_elevations){
     #@ Given a storage polygon and a channel polygon (which intersect), make me
     #@ a lateral weir and place it into hec_lines
     #@
@@ -991,25 +1024,28 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
 
     #@ Remove start and end points -- hec will not accept connections at start/end of channel
     if(length(station_order$ix)>2){
-        station_order_inside=station_order$ix[2:(length(station_order$ix)-1)]
-        weir_pts=weir_pts[station_order_inside,] 
+    #    station_order_inside=station_order$ix[2:(length(station_order$ix)-1)]
+    #    weir_pts=weir_pts[station_order_inside,] 
 
-        #@ Re-define key variables
-        st1=as.character(weir_pts$station_name)
-        st2=gsub('\\*', '', st1) # Remove * symbol
-        st3=as.numeric(st2) # Now they are numbers
+    #    #@ Re-define key variables
+    #    st1=as.character(weir_pts$station_name)
+    #    st2=gsub('\\*', '', st1) # Remove * symbol
+    #    st3=as.numeric(st2) # Now they are numbers
 
-        #@ Sort the weir points along the channel
-        station_order=sort(st3,index.return=T, decreasing=T)
+    #    #@ Sort the weir points along the channel
+    #    station_order=sort(st3,index.return=T, decreasing=T)
+        SINGLE_POINT_FLAG=0 #The weir covers multiple cross-sections
     }else{
         print('##')
         print(paste('WARNING: There is an intersection of', storage_name, ' with the channel.'))
         print('However, it does not contain more than 2 bank points')
-        print('I am skipping this one')    
+        print('I will try to add a single-point lateral weir instead')
         print(' ')
-        return(hec_lines)
+        SINGLE_POINT_FLAG=1 # The weir covers at most 1 cross-section.
+        #return(hec_lines)
     }
 
+    #browser()
     tmp_coord=as.character(coordinates(weir_pts)[1,])
     tmp_name=weir_pts$reach_name[1]
     tmp_stat=weir_pts$station_name[1]
@@ -1035,8 +1071,15 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
         print(' ')
         return(hec_lines)
     }
-    interpolated_length=min(3*ll,80)
+    #browser()
+    interpolated_length=min(ll+2,80)
     weir_line=cbind(weir_line, c(0, cumsum(weir_pts$downstream_distance[1:(ll-1)])), weir_pts$bank_elev) # Append distance and bank elevation
+    # Slightly shorten the downstream distances of weir line: This is a hack to
+    # prevent slight overshoots of the weir line beyond the downstream cross-section, which occur for other reasons.
+    if(max(weir_line[,3])>0.){
+        weir_line[,3] = weir_line[,3]/(max(weir_line[,3]))*(max(weir_line[,3])-3.0)
+        if(max(weir_line[,3])<0.0) stop('ERROR: Weir lines are now too short')
+    }
     weir_line_xint = approx(weir_line[,3], weir_line[,1], n=interpolated_length) # Interpolate x's
     weir_line_yint = approx(weir_line[,3], weir_line[,2], n=interpolated_length) # Interpolate y's
     weir_line_bank_elev_limit=approx(weir_line[,3], weir_line[,4], n=interpolated_length) # Interpolate the bank elevation
@@ -1047,16 +1090,22 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     transect_inds = cbind(rowFromY(lidar_DEM, weir_line[,3]), colFromX(lidar_DEM, weir_line[,2]) )
     weir_elev=lidar_DEM[transect_inds]
     weir_elev=weir_elev + vertical_datum_offset
-    print("############")
-    print(weir_elev)
+    #print("############")
+    #print(weir_elev)
     if(limit_weir_elevation_by_channel_bank_elevation){
         # Make sure that the weir elevation is >= the channel bank elevation
         weir_elev=pmax(weir_elev, weir_line[,4])
     }
-    print(weir_elev)
+    #print(weir_elev)
 
+    # Ensure that min weir elev is not below the lower_limit_on_lateral_weir_elevations
+    if(lower_limit_on_lateral_weir_elevations!=-Inf){
+        print(paste('CAREFUL: Forcing the lateral weir elevations to be > lower_limit_on_lateral_weir_elevations ( ', 
+                     lower_limit_on_lateral_weir_elevations, ')'))
+        weir_elev=pmax(weir_elev, min_structure_elev)
+    } 
+        
     weir_relation=cbind(weir_line[,1], weir_elev)
-   
    
     #@
     #@ Develop text information for write out modified hec_lines
@@ -1090,7 +1139,12 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     #output_text=c(output_text, paste('Lateral Weir Distance=', round(lateral_weir_distance,3),sep=""))
     output_text=c(output_text, paste('Lateral Weir Distance=', round(1.000,3),sep="")) # Make 1m downstream of upstream section
 
-    next_lines=c("Lateral Weir TW Multiple XS=-1","Lateral Weir WD=20","Lateral Weir Coef=1.1",
+    if(SINGLE_POINT_FLAG==0){
+        lw_tw_text="Lateral Weir TW Multiple XS=-1"
+    }else{
+        lw_tw_text="Lateral Weir TW Multiple XS=0"
+    }
+    next_lines=c(lw_tw_text,"Lateral Weir WD=20","Lateral Weir Coef=1.1",
                  "Lateral Weir WSCriteria=-1","Lateral Weir Flap Gates= 0","Lateral Weir Hagers EQN= 0 ,,,,,",
                  "Lateral Weir SS=0.05,0.05,","Lateral Weir Type= 0","Lateral Weir Connection Pos and Dist= 0 ,")
 
