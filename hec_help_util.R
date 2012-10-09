@@ -1102,7 +1102,7 @@ make_lateral_weir_text<-function(storage_poly, storage_name, chan_poly, chan_pts
     if(lower_limit_on_lateral_weir_elevations!=-Inf){
         print(paste('CAREFUL: Forcing the lateral weir elevations to be > lower_limit_on_lateral_weir_elevations ( ', 
                      lower_limit_on_lateral_weir_elevations, ')'))
-        weir_elev=pmax(weir_elev, min_structure_elev)
+        weir_elev=pmax(weir_elev, lower_limit_on_lateral_weir_elevations)
     } 
         
     weir_relation=cbind(weir_line[,1], weir_elev)
