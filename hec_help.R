@@ -82,12 +82,12 @@
 #######################################################################
 
 #@ Input parameters
-hecras_channels_file='May_june_2012_c.g03' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
+hecras_channels_file='test.g01' #'south_of_pasig_merg.g01' #'north_of_pasig_merg.g02' #'May_june_2012.g27' 
 #hecras_channels_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/model/store_geometry_and_boundaries/2012_07_17/May_june_2012.g29'
 output_file='hectest.g05'
 
 #potential_storage_file='storage_areas_gt_100x100b/storage_areas_gt_100x100b.shp'
-potential_storage_file='C:/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/hec_helper/new_storage_8_10_2012/editing_store.shp'
+potential_storage_file='C:/Users/Gareth/Documents/work/docs/may_june2012_workshops/hec_ras/hec_helper/new_storec/new_store.shp'
 
 lidar_DEM_file='C:/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
 #lidar_DEM_file='/media/Windows7_OS/Users/Gareth/Documents/work/docs/Nov_2011_workshops/qgis/LIDAR_and_IMAGERY/DEM/10m_DEM/test2_10m.tif'
@@ -95,14 +95,14 @@ lidar_DSM_file="F:/manila_DSM/Tiles1km_1km/manila_1m_dsm.vrt"
 vertical_datum_offset=10.5
 
 
-limit_weir_elevation_by_channel_bank_elevation=FALSE # If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
-lower_limit_on_lateral_weir_elevations=11.0 # The weir elevation in hec-ras will always be >= lower_limit_on_lateral_weir_elevation. Set to -Inf to have no limit
-#lower_limit_on_lateral_weir_elevations=-Inf  # No limit
+limit_weir_elevation_by_channel_bank_elevation=FALSE# If TRUE, then we lateral weir elevation is forced >= the elevation of the nearby channel bank points. Experimentation suggests it is better to be FALSE.
+#lower_limit_on_lateral_weir_elevations=11.0 # The weir elevation in hec-ras will always be >= lower_limit_on_lateral_weir_elevation. Set to -Inf to have no limit
+lower_limit_on_lateral_weir_elevations=-Inf  # No limit
 
 logfile='Rlog.log'
 
 #@ Options to do different things
-create_shapefiles_of_existing_rasfile=FALSE # IF TRUE, then make shapefiles of the channel geometry, and stop
+create_shapefiles_of_existing_rasfile=TRUE # IF TRUE, then make shapefiles of the channel geometry, and stop
 update_downstream_dist=FALSE # If true, then use the cutlines and channel centrelines in the hecras file to update the downstream distance parameters, then stop 
 
 
@@ -211,7 +211,7 @@ if(create_shapefiles_of_existing_rasfile){
     }
 
     # FIXME: HACK For manila hec-ras work in the following if statement
-    if(FALSE){
+    if(TRUE){
         print('Removing overly large intersections from the storage area files')
         # Remove intersections that are too large from new_store_list, by merging polygons
         # Note that intersections will occur at manually defined boundaries,
